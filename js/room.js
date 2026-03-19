@@ -7,6 +7,11 @@ let currentRoomCode = null;
 let roomListener = null;
 let onGameStartCallback = null;
 
+function getCanvasSize() {
+    const canvas = document.getElementById('gameCanvas');
+    return canvas ? { width: canvas.width, height: canvas.height } : { width: 1200, height: 800 };
+}
+
 export function initRoom(components) {
     const {
         createBtn,
@@ -20,7 +25,7 @@ export function initRoom(components) {
         onRoomLeft
     } = components;
 
-    onGameStartCallback = onRoomJoined; // будем вызывать при старте игры
+    onGameStartCallback = onRoomJoined;
 
     function generateCode() {
         return Math.floor(100000 + Math.random() * 900000).toString();
@@ -39,8 +44,10 @@ export function initRoom(components) {
                 players: { [currentPlayerNick]: true },
                 gameState: null
             });
-            // Генерируем карту и сохраняем
-            const map = getRandomMap(code);
+
+            // Генерируем карту с учётом размера канваса
+            const canvasSize = getCanvasSize();
+            const map = getRandomMap(code, canvasSize.width, canvasSize.height);
             await set(ref(db, `rooms/${code}/map`), map);
 
             currentRoomCode = code;
@@ -108,7 +115,6 @@ export function initRoom(components) {
                 }
             }
             if (count === 2 && data.gameState !== null) {
-                // Запускаем игру
                 if (onGameStartCallback) onGameStartCallback(code);
             }
         });
