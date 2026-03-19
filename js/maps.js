@@ -1,46 +1,57 @@
-export function getRandomMap(roomCode, canvasWidth = 1200, canvasHeight = 800) {
-    let seed = parseInt(roomCode) || Math.floor(Math.random() * 1000);
-    const rand = (max) => {
-        seed = (seed * 9301 + 49297) % 233280;
-        return Math.floor((seed / 233280) * max);
-    };
-
-    const maps = [mapForest, mapArena, mapMaze];
-    const index = rand(maps.length);
-    return maps[index](rand, canvasWidth, canvasHeight);
+// Простая детерминированная псевдослучайная функция на основе seed
+function seededRandom(seed) {
+    let x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
 }
 
-function mapForest(rnd, w, h) {
+function rand(seed, n, max) {
+    return Math.floor(seededRandom(seed + n * 1000) * max);
+}
+
+export function getRandomMap(roomCode) {
+    const seed = parseInt(roomCode) || 123456;
+    const mapType = rand(seed, 0, 3); // 0,1,2
+
+    switch(mapType) {
+        case 0: return mapForest(seed);
+        case 1: return mapArena(seed);
+        case 2: return mapMaze(seed);
+        default: return mapArena(seed);
+    }
+}
+
+function mapForest(seed) {
     const obstacles = [];
-    const count = 20 + rnd(10);
+    const count = 20 + rand(seed, 1, 10);
     for (let i = 0; i < count; i++) {
         obstacles.push({
-            x: 50 + rnd(w - 100),
-            y: 50 + rnd(h - 100),
-            width: 30 + rnd(60),
-            height: 30 + rnd(60)
+            x: 50 + rand(seed, i*2, 700),
+            y: 50 + rand(seed, i*2+1, 400),
+            width: 20 + rand(seed, i*2+2, 40),
+            height: 20 + rand(seed, i*2+3, 40)
         });
     }
     return obstacles;
 }
 
-function mapArena(rnd, w, h) {
+function mapArena(seed) {
     return [
-        { x: w * 0.2, y: h * 0.2, width: 80, height: 80 },
-        { x: w * 0.7, y: h * 0.2, width: 80, height: 80 },
-        { x: w * 0.2, y: h * 0.7, width: 80, height: 80 },
-        { x: w * 0.7, y: h * 0.7, width: 80, height: 80 },
-        { x: w * 0.45, y: h * 0.45, width: 120, height: 120 }
+        { x: 150, y: 100, width: 80, height: 80 },
+        { x: 550, y: 100, width: 80, height: 80 },
+        { x: 150, y: 350, width: 80, height: 80 },
+        { x: 550, y: 350, width: 80, height: 80 },
+        { x: 350, y: 220, width: 100, height: 100 }
     ];
 }
 
-function mapMaze(rnd, w, h) {
+function mapMaze(seed) {
     return [
-        { x: w * 0.15, y: h * 0.1, width: 30, height: h * 0.3 },
-        { x: w * 0.4, y: h * 0.25, width: 30, height: h * 0.4 },
-        { x: w * 0.7, y: h * 0.15, width: 30, height: h * 0.5 },
-        { x: w * 0.2, y: h * 0.5, width: w * 0.3, height: 30 },
-        { x: w * 0.55, y: h * 0.65, width: w * 0.25, height: 30 },
-        { x: w * 0.1, y: h * 0.8, width: w * 0.4, height: 30 }
+        { x: 100, y: 80, width: 30, height: 200 },
+        { x: 300, y: 150, width: 30, height: 250 },
+        { x: 500, y: 100, width: 30, height: 300 },
+        { x: 700, y: 200, width: 30, height: 200 },
+        { x: 200, y: 300, width: 250, height: 30 },
+        { x: 450, y: 400, width: 200, height: 30 },
+        { x: 80, y: 450, width: 250, height: 30 }
     ];
 }
