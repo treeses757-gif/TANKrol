@@ -96,21 +96,18 @@ function updateGame() {
     if (keys['ArrowLeft'] || keys['KeyA']) { myPos.x -= speed; moved = true; }
     if (keys['ArrowRight'] || keys['KeyD']) { myPos.x += speed; moved = true; }
     if (moved) {
-        // Ограничиваем, чтобы танк не выходил за края (радиус 20)
         myPos.x = Math.max(20, Math.min(canvas.width - 20, myPos.x));
         myPos.y = Math.max(20, Math.min(canvas.height - 20, myPos.y));
         update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
     }
 }
 
-// Векторная отрисовка танка
 function drawTank(x, y, isEnemy) {
-    // Цвета
-    const bodyColor = isEnemy ? '#e74c3c' : '#3498db'; // красный / синий
+    const bodyColor = isEnemy ? '#e74c3c' : '#3498db';
     const trackColor = '#7f8c8d';
     const barrelColor = '#2c3e50';
 
-    // Гусеницы (общий фон)
+    // Гусеницы
     ctx.fillStyle = trackColor;
     ctx.fillRect(x - 20, y - 15, 40, 30);
 
@@ -118,7 +115,7 @@ function drawTank(x, y, isEnemy) {
     ctx.fillStyle = bodyColor;
     ctx.fillRect(x - 15, y - 10, 30, 20);
 
-    // Башня (круг)
+    // Башня
     ctx.beginPath();
     ctx.arc(x, y, 10, 0, 2 * Math.PI);
     ctx.fillStyle = bodyColor;
@@ -132,8 +129,8 @@ function drawTank(x, y, isEnemy) {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Рисуем врага
+    // Враг
     drawTank(enemyPos.x, enemyPos.y, true);
-    // Рисуем игрока
+    // Игрок
     drawTank(myPos.x, myPos.y, false);
 }
