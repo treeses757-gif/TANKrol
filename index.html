@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Танковая дуэль</title>
+    <title>Дуэль кругов</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
         #lobby {
@@ -10,7 +10,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.8);
+            background: #222;
             color: white;
             padding: 30px;
             border-radius: 10px;
@@ -57,7 +57,7 @@
 </head>
 <body>
     <div id="lobby">
-        <h1>Танковая дуэль</h1>
+        <h1>Дуэль кругов</h1>
         <button onclick="window.createRoom()">Создать комнату</button>
         <br>
         <input id="roomCodeInput" type="text" placeholder="Код комнаты" maxlength="6">
@@ -72,20 +72,18 @@
     </div>
 
     <script type="module">
-        // ----- Импорты Firebase (update переименован в fbUpdate) -----
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { 
             getDatabase, 
             ref, 
             set, 
-            update as fbUpdate, 
+            update, 
             onValue, 
             get, 
             remove 
         } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
-        // ----- Конфигурация Firebase -----
         const firebaseConfig = {
             apiKey: "AIzaSyC-iLxizH1umfeHSUZHLvpAt6XNm21p90Y",
             authDomain: "tanksduel-b90c7.firebaseapp.com",
@@ -99,32 +97,25 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // ----- Глобальные переменные -----
         let currentPlayerId = null;
         let currentRoomCode = null;
         let roomListener = null;
         let gameStateListener = null;
-        let players = {};
-        let isHost = false;
         let gameActive = false;
 
-        // Позиции танков (будут обновляться из gameState)
-        let myTank = { x: 200, y: 200, angle: 0 };
-        let enemyTank = { x: 600, y: 200, angle: 0 };
+        // Позиции
+        let myPos = { x: 200, y: 200 };
+        let enemyPos = { x: 600, y: 200 };
 
-        // Canvas
         let canvas, ctx;
 
-        // ----- Авторизация -----
         signInAnonymously(auth).then((userCredential) => {
             currentPlayerId = userCredential.user.uid;
-            console.log('Игрок авторизован'); // убрали uid из вывода
         }).catch(err => {
-            console.error('Ошибка авторизации:', err);
-            showError('Не удалось авторизоваться. Проверьте настройки Firebase.');
+            console.error(err);
+            showError('Ошибка авторизации');
         });
 
-        // ----- Вспомогательные функции -----
         function showError(msg) {
             document.getElementById('errorMessage').textContent = msg;
         }
@@ -133,282 +124,153 @@
             return Math.random().toString(36).substring(2, 6).toUpperCase();
         }
 
-        // Создание комнаты
-        async function createRoom() {
-            if (!currentPlayerId) {
-                showError('Подождите, идёт авторизация...');
-                return;
-            }
+        window.createRoom = async function() {
+            if (!currentPlayerId) return showError('Авторизация...');
             try {
                 const roomCode = generateRoomCode();
                 const roomRef = ref(db, `rooms/${roomCode}`);
-                
                 const snapshot = await get(roomRef);
-                if (snapshot.exists()) {
-                    return createRoom(); // пробуем другой
-                }
-
-                const playerData = {
-                    id: currentPlayerId,
-                    name: `Игрок ${currentPlayerId.slice(0,4)}`,
-                };
+                if (snapshot.exists()) return createRoom();
 
                 await set(roomRef, {
-                    players: {
-                        [currentPlayerId]: playerData
-                    },
+                    players: { [currentPlayerId]: true },
                     gameState: null
                 });
 
                 currentRoomCode = roomCode;
-                isHost = true;
-                listenRoom(roomCode);
                 document.getElementById('roomCodeSpan').textContent = roomCode;
+                listenRoom(roomCode);
                 showError('');
-                // без console.log
             } catch (err) {
-                console.error('Ошибка создания комнаты:', err);
-                showError('Не удалось создать комнату. Проверьте правила Firebase.');
+                showError('Ошибка создания');
             }
-        }
+        };
 
-        // Присоединение к комнате (по полю ввода)
-        async function joinRoomFromInput() {
-            if (!currentPlayerId) {
-                showError('Подождите, идёт авторизация...');
-                return;
-            }
+        window.joinRoomFromInput = async function() {
+            if (!currentPlayerId) return showError('Авторизация...');
             const roomCode = document.getElementById('roomCodeInput').value.trim().toUpperCase();
             if (!roomCode) return;
             await joinRoom(roomCode);
-        }
+        };
 
         async function joinRoom(roomCode) {
             try {
                 const roomRef = ref(db, `rooms/${roomCode}`);
                 const snapshot = await get(roomRef);
-                
-                if (!snapshot.exists()) {
-                    showError('Комната не найдена');
-                    return false;
-                }
+                if (!snapshot.exists()) return showError('Комната не найдена');
 
-                const roomData = snapshot.val();
-                const playersData = roomData.players || {};
-                
-                if (Object.keys(playersData).length >= 2) {
-                    showError('Комната уже заполнена');
-                    return false;
-                }
+                const players = snapshot.val().players || {};
+                if (Object.keys(players).length >= 2) return showError('Комната полна');
 
-                const playerData = {
-                    id: currentPlayerId,
-                    name: `Игрок ${currentPlayerId.slice(0,4)}`,
-                };
-
-                await fbUpdate(ref(db, `rooms/${roomCode}/players`), {
-                    [currentPlayerId]: playerData
-                });
+                await update(ref(db, `rooms/${roomCode}/players`), { [currentPlayerId]: true });
 
                 currentRoomCode = roomCode;
-                isHost = false;
-                listenRoom(roomCode);
                 document.getElementById('roomCodeSpan').textContent = roomCode;
+                listenRoom(roomCode);
                 showError('');
-                // без console.log
-                return true;
             } catch (err) {
-                console.error('Ошибка подключения:', err);
-                showError('Не удалось подключиться. Проверьте код и правила Firebase.');
-                return false;
+                showError('Ошибка подключения');
             }
         }
 
-        // Слушаем изменения в комнате
         function listenRoom(roomCode) {
             const roomRef = ref(db, `rooms/${roomCode}`);
-            
-            if (roomListener) {
-                roomListener();
-            }
-            
+            if (roomListener) roomListener();
             roomListener = onValue(roomRef, (snapshot) => {
                 const data = snapshot.val();
-                if (!data) {
-                    leaveRoom('Комната была закрыта');
-                    return;
-                }
-                
-                players = data.players || {};
+                if (!data) return leaveRoom('Комната закрыта');
+
+                const players = data.players || {};
                 const playerCount = Object.keys(players).length;
-                
-                updateLobbyUI(roomCode, players, playerCount);
-                
+                document.getElementById('playersList').innerHTML = 
+                    `<p>Игроков: ${playerCount}/2</p>` +
+                    (playerCount === 2 ? '<p>Игра начинается...</p>' : '<p>Ожидание игрока...</p>');
+
                 if (playerCount === 2 && data.gameState === null) {
-                    startGame(roomCode, players, isHost);
+                    startGame(roomCode, players);
                 }
-                
                 if (playerCount === 2 && data.gameState !== null && !gameActive) {
-                    showGameScreen(roomCode);
+                    showGameScreen();
                     listenGameState(roomCode);
                 }
-            }, (err) => {
-                console.error('Ошибка слушателя комнаты:', err);
-                showError('Потеряно соединение с комнатой');
             });
         }
 
-        function updateLobbyUI(roomCode, players, playerCount) {
-            const listDiv = document.getElementById('playersList');
-            let html = '<h3>Игроки в комнате:</h3>';
-            for (let id in players) {
-                html += `<p>${players[id].name} ${id === currentPlayerId ? '(вы)' : ''}</p>`;
-            }
-            if (playerCount < 2) {
-                html += '<p>Ожидание второго игрока...</p>';
-            } else {
-                html += '<p>Оба игрока на месте! Игра начинается...</p>';
-            }
-            listDiv.innerHTML = html;
-        }
-
-        function startGame(roomCode, players, isHost) {
-            if (isHost) {
-                const playerIds = Object.keys(players);
-                const gameState = {
-                    turn: playerIds[0],
-                    tanks: {
-                        [playerIds[0]]: { x: 200, y: 200 },   // первый игрок (хост)
-                        [playerIds[1]]: { x: 600, y: 200 }    // второй игрок
-                    }
-                };
-                set(ref(db, `rooms/${roomCode}/gameState`), gameState)
-                    .catch(err => {
-                        console.error('Не удалось инициализировать игру:', err);
-                        showError('Ошибка запуска игры');
-                    });
-            }
-            
-            showGameScreen(roomCode);
+        function startGame(roomCode, players) {
+            const playerIds = Object.keys(players);
+            const gameState = {
+                [playerIds[0]]: { x: 200, y: 200 },
+                [playerIds[1]]: { x: 600, y: 200 }
+            };
+            set(ref(db, `rooms/${roomCode}/gameState`), gameState);
+            showGameScreen();
             listenGameState(roomCode);
         }
 
-        function showGameScreen(roomCode) {
+        function showGameScreen() {
             document.getElementById('lobby').style.display = 'none';
             document.getElementById('game').style.display = 'block';
             gameActive = true;
-            
             canvas = document.getElementById('gameCanvas');
             ctx = canvas.getContext('2d');
             resizeCanvas();
             window.addEventListener('resize', resizeCanvas);
-            
             requestAnimationFrame(gameLoop);
         }
 
         function listenGameState(roomCode) {
-            const gameStateRef = ref(db, `rooms/${roomCode}/gameState`);
             if (gameStateListener) gameStateListener();
-            
-            gameStateListener = onValue(gameStateRef, (snapshot) => {
+            gameStateListener = onValue(ref(db, `rooms/${roomCode}/gameState`), (snapshot) => {
                 const state = snapshot.val();
-                if (!state || !state.tanks) return;
-                
-                // Обновляем позиции танков
-                for (let id in state.tanks) {
-                    if (id === currentPlayerId) {
-                        myTank = { ...state.tanks[id] }; // свой танк
-                    } else {
-                        enemyTank = { ...state.tanks[id] }; // враг
-                    }
+                if (!state) return;
+                for (let id in state) {
+                    if (id === currentPlayerId) myPos = state[id];
+                    else enemyPos = state[id];
                 }
-            }, (err) => {
-                console.error('Ошибка слушателя игры:', err);
             });
         }
 
-        // Игровой цикл
         function gameLoop() {
             if (!gameActive) return;
-            updateGame(); 
+            updateGame();
             draw();
             requestAnimationFrame(gameLoop);
         }
 
-        // Обработка клавиш
         let keys = {};
         window.addEventListener('keydown', (e) => {
             keys[e.code] = true;
-            // Предотвращаем скролл страницы от стрелок
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                e.preventDefault();
-            }
+            if (e.key.startsWith('Arrow')) e.preventDefault();
         });
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-        // Локальная функция обновления игры
         function updateGame() {
-            if (!gameActive || !currentRoomCode || !currentPlayerId) return;
-
+            if (!currentRoomCode || !currentPlayerId) return;
             const speed = 3;
             let moved = false;
-
-            if (keys['ArrowUp']) {
-                myTank.y -= speed;
-                moved = true;
-            }
-            if (keys['ArrowDown']) {
-                myTank.y += speed;
-                moved = true;
-            }
-            if (keys['ArrowLeft']) {
-                myTank.x -= speed;
-                moved = true;
-            }
-            if (keys['ArrowRight']) {
-                myTank.x += speed;
-                moved = true;
-            }
-
-            // Простые границы (не даём выйти за край)
-            myTank.x = Math.max(20, Math.min(canvas.width - 20, myTank.x));
-            myTank.y = Math.max(20, Math.min(canvas.height - 20, myTank.y));
-
+            if (keys['ArrowUp']) { myPos.y -= speed; moved = true; }
+            if (keys['ArrowDown']) { myPos.y += speed; moved = true; }
+            if (keys['ArrowLeft']) { myPos.x -= speed; moved = true; }
+            if (keys['ArrowRight']) { myPos.x += speed; moved = true; }
             if (moved) {
-                // Отправляем свою позицию в Firebase
-                const updates = {};
-                updates[`rooms/${currentRoomCode}/gameState/tanks/${currentPlayerId}`] = myTank;
-                fbUpdate(ref(db), updates).catch(err => {
-                    console.error('Ошибка отправки позиции:', err);
-                });
+                myPos.x = Math.max(20, Math.min(canvas.width-20, myPos.x));
+                myPos.y = Math.max(20, Math.min(canvas.height-20, myPos.y));
+                update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerId}`]: myPos });
             }
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Препятствия (для примера)
-            ctx.fillStyle = '#5a3e1a';
-            ctx.fillRect(300, 150, 50, 200);
-            ctx.fillRect(500, 100, 100, 50);
-            
-            // Рисуем вражеский танк (красный)
+            // враг красный
             ctx.fillStyle = 'red';
             ctx.beginPath();
-            ctx.arc(enemyTank.x, enemyTank.y, 20, 0, 2 * Math.PI);
+            ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2*Math.PI);
             ctx.fill();
-            ctx.fillStyle = 'darkred';
-            ctx.fillRect(enemyTank.x - 15, enemyTank.y - 5, 30, 10);
-            ctx.fillRect(enemyTank.x - 5, enemyTank.y - 15, 10, 20);
-            
-            // Рисуем свой танк (зелёный)
-            ctx.fillStyle = 'green';
+            // свой синий
+            ctx.fillStyle = 'blue';
             ctx.beginPath();
-            ctx.arc(myTank.x, myTank.y, 20, 0, 2 * Math.PI);
+            ctx.arc(myPos.x, myPos.y, 20, 0, 2*Math.PI);
             ctx.fill();
-            ctx.fillStyle = 'darkgreen';
-            ctx.fillRect(myTank.x - 15, myTank.y - 5, 30, 10);
-            ctx.fillRect(myTank.x - 5, myTank.y - 15, 10, 20);
         }
 
         function resizeCanvas() {
@@ -416,11 +278,9 @@
             canvas.height = window.innerHeight;
         }
 
-        // Выход из комнаты
-        function leaveRoom(reason = '') {
+        window.leaveRoom = function(reason = '') {
             if (currentPlayerId && currentRoomCode) {
-                remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`))
-                    .catch(err => console.warn('Ошибка при удалении игрока:', err));
+                remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`));
             }
             currentRoomCode = null;
             gameActive = false;
@@ -429,19 +289,13 @@
             if (roomListener) roomListener();
             if (gameStateListener) gameStateListener();
             if (reason) showError(reason);
-        }
+        };
 
-        // При закрытии вкладки
         window.addEventListener('beforeunload', () => {
             if (currentPlayerId && currentRoomCode) {
                 remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`));
             }
         });
-
-        // Явно делаем функции глобальными
-        window.createRoom = createRoom;
-        window.joinRoomFromInput = joinRoomFromInput;
-        window.leaveRoom = leaveRoom;
     </script>
 </body>
 </html>
