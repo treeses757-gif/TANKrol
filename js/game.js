@@ -1,6 +1,5 @@
 import { db } from './firebase.js';
 import { ref, onValue, update } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-import { tankBlueImg, tankRedImg } from './textures.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
@@ -97,27 +96,44 @@ function updateGame() {
     if (keys['ArrowLeft'] || keys['KeyA']) { myPos.x -= speed; moved = true; }
     if (keys['ArrowRight'] || keys['KeyD']) { myPos.x += speed; moved = true; }
     if (moved) {
+        // Ограничиваем, чтобы танк не выходил за края (радиус 20)
         myPos.x = Math.max(20, Math.min(canvas.width - 20, myPos.x));
         myPos.y = Math.max(20, Math.min(canvas.height - 20, myPos.y));
         update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
     }
 }
 
+// Векторная отрисовка танка
+function drawTank(x, y, isEnemy) {
+    // Цвета
+    const bodyColor = isEnemy ? '#e74c3c' : '#3498db'; // красный / синий
+    const trackColor = '#7f8c8d';
+    const barrelColor = '#2c3e50';
+
+    // Гусеницы (общий фон)
+    ctx.fillStyle = trackColor;
+    ctx.fillRect(x - 20, y - 15, 40, 30);
+
+    // Корпус
+    ctx.fillStyle = bodyColor;
+    ctx.fillRect(x - 15, y - 10, 30, 20);
+
+    // Башня (круг)
+    ctx.beginPath();
+    ctx.arc(x, y, 10, 0, 2 * Math.PI);
+    ctx.fillStyle = bodyColor;
+    ctx.fill();
+
+    // Ствол
+    ctx.fillStyle = barrelColor;
+    ctx.fillRect(x + 5, y - 3, 20, 6);
+}
+
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.imageSmoothingEnabled = false; // <--- отключаем сглаживание текстур
-
-    if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
-        ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
-    } else {
-        ctx.fillStyle = 'red';
-        ctx.beginPath(); ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2 * Math.PI); ctx.fill();
-    }
-
-    if (tankBlueImg.complete && tankBlueImg.naturalHeight !== 0) {
-        ctx.drawImage(tankBlueImg, myPos.x - 20, myPos.y - 20, 40, 40);
-    } else {
-        ctx.fillStyle = 'blue';
-        ctx.beginPath(); ctx.arc(myPos.x, myPos.y, 20, 0, 2 * Math.PI); ctx.fill();
-    }
+    
+    // Рисуем врага
+    drawTank(enemyPos.x, enemyPos.y, true);
+    // Рисуем игрока
+    drawTank(myPos.x, myPos.y, false);
 }
