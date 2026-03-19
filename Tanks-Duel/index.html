@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Дуэль кругов</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="lobby">
+        <h1>Дуэль кругов</h1>
+        <button id="createBtn">Создать комнату</button><br>
+        <input id="roomCodeInput" type="text" inputmode="numeric" pattern="\d*" placeholder="Код (только цифры)" maxlength="6">
+        <button id="joinBtn">Присоединиться</button>
+        <div class="code-container">
+            <div id="roomCodeDisplay">——</div>
+            <button id="copyBtn" style="display:none;">📋 Копировать</button>
+        </div>
+        <div id="status">Загрузка...</div>
+    </div>
+
+    <div id="game">
+        <canvas id="gameCanvas"></canvas>
+        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span></div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
