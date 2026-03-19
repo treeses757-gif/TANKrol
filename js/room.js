@@ -1,10 +1,11 @@
 import { db } from './firebase.js';
 import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-import { startGame, listenGameState, gameActive, setCurrentRoom } from './game.js';
+import { getRandomMap } from './maps.js';
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
 let roomListener = null;
+let onGameStartCallback = null;
 
 export function initRoom(components) {
     const {
@@ -19,12 +20,12 @@ export function initRoom(components) {
         onRoomLeft
     } = components;
 
-    // Генерация кода
+    onGameStartCallback = onRoomJoined; // будем вызывать при старте игры
+
     function generateCode() {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Создание комнаты
     createBtn.onclick = async () => {
         if (!currentPlayerNick) { alert('Сначала войдите'); return; }
         const code = generateCode();
@@ -38,6 +39,10 @@ export function initRoom(components) {
                 players: { [currentPlayerNick]: true },
                 gameState: null
             });
+            // Генерируем карту и сохраняем
+            const map = getRandomMap(code);
+            await set(ref(db, `rooms/${code}/map`), map);
+
             currentRoomCode = code;
             roomCodeDisplay.textContent = code;
             roomCodeSpan.textContent = code;
@@ -49,7 +54,6 @@ export function initRoom(components) {
         }
     };
 
-    // Присоединение к комнате
     joinBtn.onclick = async () => {
         if (!currentPlayerNick) { alert('Сначала войдите'); return; }
         const code = roomCodeInput.value.trim();
@@ -75,7 +79,6 @@ export function initRoom(components) {
         }
     };
 
-    // Копирование кода
     copyBtn.addEventListener('click', () => {
         if (currentRoomCode) {
             navigator.clipboard.writeText(currentRoomCode).then(() => {
@@ -86,7 +89,6 @@ export function initRoom(components) {
         }
     });
 
-    // Слушатель комнаты
     function listenRoom(code) {
         if (roomListener) roomListener();
         const roomRef = ref(db, `rooms/${code}`);
@@ -97,7 +99,6 @@ export function initRoom(components) {
             const count = Object.keys(players).length;
             statusDiv.textContent = `Игроков: ${count}/2`;
             if (count === 2 && data.gameState === null) {
-                // Первый игрок инициализирует позиции
                 if (currentPlayerNick === Object.keys(players)[0]) {
                     const gameState = {
                         [Object.keys(players)[0]]: { x: 200, y: 200 },
@@ -106,16 +107,13 @@ export function initRoom(components) {
                     set(ref(db, `rooms/${code}/gameState`), gameState);
                 }
             }
-            if (count === 2 && data.gameState !== null && !gameActive) {
+            if (count === 2 && data.gameState !== null) {
                 // Запускаем игру
-                startGame();
-                listenGameState(code, currentPlayerNick);
-                if (onRoomJoined) onRoomJoined(code);
+                if (onGameStartCallback) onGameStartCallback(code);
             }
         });
     }
 
-    // Выход из комнаты (можно вызвать извне)
     function leaveRoom() {
         if (currentPlayerNick && currentRoomCode) {
             remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerNick}`));
@@ -125,12 +123,10 @@ export function initRoom(components) {
         if (onRoomLeft) onRoomLeft();
     }
 
-    // Обновление ника текущего игрока (вызывается при входе)
     function setPlayerNick(nick) {
         currentPlayerNick = nick;
     }
 
-    // Получить текущий код комнаты
     function getRoomCode() {
         return currentRoomCode;
     }
