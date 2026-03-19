@@ -1,4 +1,4 @@
-import './firebase.js'; // просто чтобы инициализировать Firebase
+import { db } from './firebase.js';
 import { initAuth } from './auth.js';
 import { initRoom } from './room.js';
 import { initGame, startGame, stopGame, setCurrentRoom, listenGameState, gameActive } from './game.js';
@@ -24,17 +24,16 @@ const statusDiv = document.getElementById('status');
 
 let currentPlayerNick = localStorage.getItem('playerNick') || null;
 
-// Если уже есть сохранённый ник, показываем лобби
 if (currentPlayerNick) {
     authScreen.classList.remove('active');
     lobbyScreen.classList.add('active');
     userNickSpan.textContent = currentPlayerNick;
 }
 
-// Инициализация игры (один раз)
+// Инициализация игры
 initGame({ gameScreen, lobbyScreen });
 
-// Инициализация комнаты и получение методов управления
+// Инициализация комнаты
 const roomHandlers = initRoom({
     createBtn,
     joinBtn,
@@ -45,6 +44,8 @@ const roomHandlers = initRoom({
     statusDiv,
     onRoomJoined: (code) => {
         setCurrentRoom(code, currentPlayerNick);
+        listenGameState(code, currentPlayerNick);
+        startGame();
     },
     onRoomLeft: () => {
         stopGame();
@@ -74,13 +75,10 @@ initAuth({
     }
 });
 
-// Передаём текущий ник в обработчик комнаты при старте
 roomHandlers.setPlayerNick(currentPlayerNick);
 
-// Обработка закрытия вкладки
 window.addEventListener('beforeunload', () => {
     if (currentPlayerNick && roomHandlers.getRoomCode()) {
-        // Комната очистится в Firebase благодаря leaveRoom, но можно вызвать напрямую
-        // (уже реализовано в leaveRoom)
+        // Firebase очистит при отключении
     }
 });
