@@ -29,6 +29,9 @@
             color: yellow;
             margin: 20px 0;
             min-height: 40px;
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
         }
         #game {
             display: none;
@@ -53,6 +56,11 @@
             margin-top: 10px;
             color: #aaa;
         }
+        .hint {
+            color: #ffaa00;
+            font-size: 14px;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -60,10 +68,11 @@
         <h1>Дуэль кругов</h1>
         <button id="createBtn">Создать комнату</button>
         <br>
-        <input id="roomCodeInput" type="text" inputmode="text" placeholder="Код комнаты" maxlength="6" autocapitalize="characters" autocorrect="off">
+        <input id="roomCodeInput" type="text" inputmode="text" placeholder="Код комнаты (буквы и цифры)" maxlength="6" autocapitalize="characters" autocorrect="off">
         <button id="joinBtn">Присоединиться</button>
-        <div id="roomCodeDisplay"></div>
-        <div id="status"></div>
+        <div id="roomCodeDisplay">——</div>
+        <div id="status">Подключение к Firebase...</div>
+        <div class="hint">Если код не появляется, откройте консоль (F12)</div>
     </div>
 
     <div id="game">
@@ -75,6 +84,8 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { getDatabase, ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+        console.log('Скрипт загружен');
 
         const firebaseConfig = {
             apiKey: "AIzaSyC-iLxizH1umfeHSUZHLvpAt6XNm21p90Y",
@@ -101,10 +112,11 @@
 
         signInAnonymously(auth).then(user => {
             currentPlayerId = user.user.uid;
+            console.log('Авторизован, uid:', currentPlayerId);
             document.getElementById('status').textContent = 'Готов';
         }).catch(err => {
-            console.error(err);
-            document.getElementById('status').textContent = 'Ошибка авторизации';
+            console.error('Ошибка авторизации Firebase:', err);
+            document.getElementById('status').textContent = 'Ошибка авторизации. Проверьте настройки Firebase.';
         });
 
         function generateCode() {
@@ -112,37 +124,66 @@
         }
 
         document.getElementById('createBtn').onclick = async () => {
-            if (!currentPlayerId) return alert('Авторизация...');
-            const code = generateCode();
-            const roomRef = ref(db, `rooms/${code}`);
-            const snap = await get(roomRef);
-            if (snap.exists()) {
-                return document.getElementById('createBtn').onclick();
+            console.log('Нажата кнопка создания');
+            if (!currentPlayerId) {
+                alert('Авторизация...');
+                return;
             }
-            await set(roomRef, {
-                players: { [currentPlayerId]: true },
-                gameState: null
-            });
-            currentRoomCode = code;
-            document.getElementById('roomCodeDisplay').textContent = 'Код: ' + code;
-            document.getElementById('roomCodeSpan').textContent = code;
-            listenRoom(code);
+            const code = generateCode();
+            console.log('Пробуем код:', code);
+            const roomRef = ref(db, `rooms/${code}`);
+            try {
+                const snap = await get(roomRef);
+                if (snap.exists()) {
+                    console.log('Код занят, повтор');
+                    return document.getElementById('createBtn').onclick();
+                }
+                await set(roomRef, {
+                    players: { [currentPlayerId]: true },
+                    gameState: null
+                });
+                console.log('Комната создана, код:', code);
+                currentRoomCode = code;
+                document.getElementById('roomCodeDisplay').textContent = 'Код: ' + code;
+                document.getElementById('roomCodeSpan').textContent = code;
+                listenRoom(code);
+            } catch (err) {
+                console.error('Ошибка при создании комнаты:', err);
+                alert('Ошибка создания комнаты. Смотрите консоль.');
+            }
         };
 
         document.getElementById('joinBtn').onclick = async () => {
-            if (!currentPlayerId) return alert('Авторизация...');
+            console.log('Нажата кнопка присоединения');
+            if (!currentPlayerId) {
+                alert('Авторизация...');
+                return;
+            }
             const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
             if (!code) return;
-            const roomRef = ref(db, `rooms/${code}`);
-            const snap = await get(roomRef);
-            if (!snap.exists()) return alert('Комната не найдена');
-            const players = snap.val().players || {};
-            if (Object.keys(players).length >= 2) return alert('Комната полна');
-            await update(ref(db, `rooms/${code}/players`), { [currentPlayerId]: true });
-            currentRoomCode = code;
-            document.getElementById('roomCodeDisplay').textContent = 'Код: ' + code;
-            document.getElementById('roomCodeSpan').textContent = code;
-            listenRoom(code);
+            console.log('Попытка присоединиться к коду:', code);
+            try {
+                const roomRef = ref(db, `rooms/${code}`);
+                const snap = await get(roomRef);
+                if (!snap.exists()) {
+                    alert('Комната не найдена');
+                    return;
+                }
+                const players = snap.val().players || {};
+                if (Object.keys(players).length >= 2) {
+                    alert('Комната полна');
+                    return;
+                }
+                await update(ref(db, `rooms/${code}/players`), { [currentPlayerId]: true });
+                console.log('Присоединились к комнате:', code);
+                currentRoomCode = code;
+                document.getElementById('roomCodeDisplay').textContent = 'Код: ' + code;
+                document.getElementById('roomCodeSpan').textContent = code;
+                listenRoom(code);
+            } catch (err) {
+                console.error('Ошибка при присоединении:', err);
+                alert('Ошибка присоединения. Смотрите консоль.');
+            }
         };
 
         function listenRoom(code) {
@@ -151,7 +192,7 @@
             roomListener = onValue(roomRef, (snap) => {
                 const data = snap.val();
                 if (!data) {
-                    alert('Комната закрыта');
+                    console.log('Комната удалена');
                     leaveRoom();
                     return;
                 }
@@ -159,6 +200,7 @@
                 const count = Object.keys(players).length;
                 document.getElementById('status').textContent = `Игроков: ${count}/2`;
                 if (count === 2 && data.gameState === null) {
+                    console.log('Два игрока, инициализация игры');
                     if (currentPlayerId === Object.keys(players)[0]) {
                         const gameState = {
                             [Object.keys(players)[0]]: { x: 200, y: 200 },
@@ -168,6 +210,7 @@
                     }
                 }
                 if (count === 2 && data.gameState !== null && !gameActive) {
+                    console.log('Запуск игры');
                     startGame();
                     listenGameState(code);
                 }
@@ -257,7 +300,7 @@
             gameActive = false;
             document.getElementById('lobby').style.display = 'block';
             document.getElementById('game').style.display = 'none';
-            document.getElementById('roomCodeDisplay').textContent = '';
+            document.getElementById('roomCodeDisplay').textContent = '——';
             if (roomListener) roomListener();
             if (gameListener) gameListener();
         }
