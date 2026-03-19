@@ -58,23 +58,23 @@
 <body>
     <div id="lobby">
         <h1>Танковая дуэль</h1>
-        <button onclick="createRoom()">Создать комнату</button>
+        <button onclick="window.createRoom()">Создать комнату</button>
         <br>
         <input id="roomCodeInput" type="text" placeholder="Код комнаты" maxlength="6">
-        <button onclick="joinRoomFromInput()">Присоединиться</button>
+        <button onclick="window.joinRoomFromInput()">Присоединиться</button>
         <div id="playersList"></div>
         <div id="errorMessage" class="error"></div>
     </div>
 
     <div id="game">
         <canvas id="gameCanvas"></canvas>
-        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span> <button onclick="leaveRoom()">Выйти</button></div>
+        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span> <button onclick="window.leaveRoom()">Выйти</button></div>
     </div>
 
     <script type="module">
-        // ----- Импорты Firebase (добавлен get) -----
+        // ----- Импорты Firebase -----
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-        import { getDatabase, ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+        import { getDatabase, ref, set, update as firebaseUpdate, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
         // ----- Конфигурация Firebase -----
@@ -131,7 +131,7 @@
         }
 
         // Создание комнаты
-        window.createRoom = async function() {
+        async function createRoom() {
             if (!currentPlayerId) {
                 showError('Подождите, идёт авторизация...');
                 return;
@@ -169,10 +169,10 @@
                 console.error('Ошибка создания комнаты:', err);
                 showError('Не удалось создать комнату. Проверьте правила Firebase.');
             }
-        };
+        }
 
         // Присоединение к комнате (по полю ввода)
-        window.joinRoomFromInput = async function() {
+        async function joinRoomFromInput() {
             if (!currentPlayerId) {
                 showError('Подождите, идёт авторизация...');
                 return;
@@ -180,7 +180,7 @@
             const roomCode = document.getElementById('roomCodeInput').value.trim().toUpperCase();
             if (!roomCode) return;
             await joinRoom(roomCode);
-        };
+        }
 
         async function joinRoom(roomCode) {
             try {
@@ -206,7 +206,7 @@
                     ready: false
                 };
 
-                await update(ref(db, `rooms/${roomCode}/players`), {
+                await firebaseUpdate(ref(db, `rooms/${roomCode}/players`), {
                     [currentPlayerId]: playerData
                 });
 
@@ -340,7 +340,7 @@
         // Игровой цикл (отрисовка)
         function gameLoop() {
             if (!gameActive) return;
-            update(); // обработка ввода
+            updateGame(); // обработка ввода
             draw();
             requestAnimationFrame(gameLoop);
         }
@@ -350,7 +350,8 @@
         window.addEventListener('keydown', (e) => keys[e.code] = true);
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-        function update() {
+        // Переименовано с update на updateGame, чтобы избежать конфликта с firebaseUpdate
+        function updateGame() {
             if (!gameActive || !currentRoomCode || !currentPlayerId) return;
 
             // Управление своим танком
@@ -363,7 +364,7 @@
             // Отправляем свою позицию в Firebase
             const updates = {};
             updates[`rooms/${currentRoomCode}/gameState/tanks/${currentPlayerId}`] = myTank;
-            update(ref(db), updates).catch(err => {
+            firebaseUpdate(ref(db), updates).catch(err => {
                 console.error('Ошибка отправки позиции:', err);
             });
         }
@@ -401,7 +402,7 @@
         }
 
         // Выход из комнаты
-        window.leaveRoom = function(reason = '') {
+        function leaveRoom(reason = '') {
             if (currentPlayerId && currentRoomCode) {
                 // Удаляем себя из списка игроков
                 remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`))
@@ -415,17 +416,20 @@
             if (roomListener) roomListener();
             if (gameStateListener) gameStateListener();
             if (reason) showError(reason);
-        };
+        }
 
         // При закрытии вкладки
         window.addEventListener('beforeunload', () => {
             if (currentPlayerId && currentRoomCode) {
-                // Синхронный Beacon API не дожидается, но лучше использовать sendBeacon
-                // Для простоты оставим remove, но он может не успеть
-                fetch('https://firebasedynamiclinks.googleapis.com/v1/shortLinks?key=' + firebaseConfig.apiKey, { method: 'POST' }); // заглушка
+                // Пытаемся удалить игрока (не гарантировано, но попытаемся)
                 navigator.sendBeacon?.('https://dummy');
             }
         });
+
+        // Явно прикрепляем функции к window, чтобы они были доступны из onclick
+        window.createRoom = createRoom;
+        window.joinRoomFromInput = joinRoomFromInput;
+        window.leaveRoom = leaveRoom;
 
         console.log('Модуль загружен');
     </script>
