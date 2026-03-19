@@ -1,82 +1,55 @@
 import { db } from './firebase.js';
 import { ref, onValue, update } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import { tankBlueImg, tankRedImg } from './textures.js';
+import { isPositionFree } from './utils.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
-let myAngle = 0;
 let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
 let gameListener = null;
-let mapListener = null;
-let currentMap = [];
 let keys = {};
-const BASE_SPEED = 2;
+let obstacles = [];
+let lastTimestamp = 0;
+const PLAYER_SPEED = 200; // пикселей в секунду
+
 let lobbyScreenEl, gameScreenEl;
 
-let lastSendTime = 0;
-const SEND_INTERVAL = 50;
-
-// Счётчики для диагностики
-let initCount = 0;
-let startCount = 0;
-let loopCount = 0;
-let updateCount = 0;
-
-console.log('Скрипт game.js загружен'); // 1
-
-function collideRectCircle(rect, circleX, circleY, radius) {
-    let closestX = Math.max(rect.x, Math.min(circleX, rect.x + rect.width));
-    let closestY = Math.max(rect.y, Math.min(circleY, rect.y + rect.height));
-    let dx = circleX - closestX;
-    let dy = circleY - closestY;
-    return (dx * dx + dy * dy) < radius * radius;
-}
-
-function isPositionFree(x, y, radius = 20) {
-    for (let obs of currentMap) {
-        if (collideRectCircle(obs, x, y, radius)) return false;
-    }
-    return true;
-}
-
-function tryMove(oldX, oldY, newX, newY, radius = 20) {
-    if (isPositionFree(newX, newY, radius)) return { x: newX, y: newY };
-    if (isPositionFree(newX, oldY, radius)) return { x: newX, y: oldY };
-    if (isPositionFree(oldX, newY, radius)) return { x: oldX, y: newY };
-    return { x: oldX, y: oldY };
-}
-
 export function initGame(components) {
-    initCount++;
-    console.log(`initGame вызван ${initCount} раз(а)`); // 2
     lobbyScreenEl = components.lobbyScreen;
     gameScreenEl = components.gameScreen;
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
     window.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+            return;
+        }
         keys[e.code] = true;
         if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) e.preventDefault();
     });
-    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+    window.addEventListener('keyup', (e) => {
+        keys[e.code] = false;
+    });
 
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 }
 
-export function setGameMap(map) { currentMap = map || []; }
-
 function resizeCanvas() {
-    if (canvas) { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    if (canvas) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
 }
 
 export function startGame() {
-    startCount++;
-    console.log(`startGame вызван ${startCount} раз(а)`); // 3
-    if (!gameScreenEl || !lobbyScreenEl) return;
+    if (!gameScreenEl || !lobbyScreenEl) {
+        console.error('Game screens not initialized');
+        return;
+    }
     lobbyScreenEl.classList.remove('active');
     gameScreenEl.classList.add('active');
     gameActive = true;
@@ -85,25 +58,19 @@ export function startGame() {
 
 export function stopGame() {
     gameActive = false;
-    if (gameListener) { gameListener(); gameListener = null; }
-    if (mapListener) { mapListener(); mapListener = null; }
+    if (gameListener) {
+        gameListener();
+        gameListener = null;
+    }
     if (lobbyScreenEl && gameScreenEl) {
         lobbyScreenEl.classList.add('active');
         gameScreenEl.classList.remove('active');
     }
-    currentMap = [];
 }
 
 export function setCurrentRoom(roomCode, playerNick) {
     currentRoomCode = roomCode;
     currentPlayerNick = playerNick;
-    if (roomCode) {
-        if (mapListener) mapListener();
-        mapListener = onValue(ref(db, `rooms/${roomCode}/map`), (snap) => {
-            const map = snap.val();
-            if (map) setGameMap(map);
-        });
-    }
 }
 
 export function listenGameState(code, playerNick) {
@@ -118,74 +85,72 @@ export function listenGameState(code, playerNick) {
     });
 }
 
-function gameLoop() {
+export function loadMap(roomCode) {
+    onValue(ref(db, `rooms/${roomCode}/map`), (snap) => {
+        obstacles = snap.val() || [];
+        console.log('Map loaded:', obstacles);
+    }, { onlyOnce: true });
+}
+
+function gameLoop(timestamp) {
     if (!gameActive) return;
-    loopCount++;
-    if (loopCount % 60 === 0) console.log(`gameLoop работает, кадров: ${loopCount}`); // 4
-    updateGame();
+    if (lastTimestamp === 0) lastTimestamp = timestamp;
+    const deltaTime = (timestamp - lastTimestamp) / 1000;
+    lastTimestamp = timestamp;
+
+    updateGame(deltaTime);
     draw();
     requestAnimationFrame(gameLoop);
 }
 
-function updateGame() {
+function updateGame(deltaTime) {
     if (!currentRoomCode || !currentPlayerNick || !canvas) return;
+    const move = PLAYER_SPEED * deltaTime;
+    let newX = myPos.x;
+    let newY = myPos.y;
 
-    updateCount++;
-    if (updateCount % 60 === 0) console.log(`updateGame вызван ${updateCount} раз`); // 5
+    if (keys['ArrowUp'] || keys['KeyW']) newY -= move;
+    if (keys['ArrowDown'] || keys['KeyS']) newY += move;
+    if (keys['ArrowLeft'] || keys['KeyA']) newX -= move;
+    if (keys['ArrowRight'] || keys['KeyD']) newX += move;
 
-    let dx = 0, dy = 0;
-    if (keys['ArrowUp'] || keys['KeyW']) dy -= 1;
-    if (keys['ArrowDown'] || keys['KeyS']) dy += 1;
-    if (keys['ArrowLeft'] || keys['KeyA']) dx -= 1;
-    if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
+    const radius = 20;
+    newX = Math.max(radius, Math.min(canvas.width - radius, newX));
+    newY = Math.max(radius, Math.min(canvas.height - radius, newY));
 
-    if (dx !== 0 || dy !== 0) {
-        if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
-        let newX = myPos.x + dx * BASE_SPEED;
-        let newY = myPos.y + dy * BASE_SPEED;
-        newX = Math.max(20, Math.min(canvas.width - 20, newX));
-        newY = Math.max(20, Math.min(canvas.height - 20, newY));
-
-        const finalPos = tryMove(myPos.x, myPos.y, newX, newY, 20);
-        if (finalPos.x !== myPos.x || finalPos.y !== myPos.y) {
-            const moveDx = finalPos.x - myPos.x;
-            const moveDy = finalPos.y - myPos.y;
-            if (moveDx !== 0 || moveDy !== 0) myAngle = Math.atan2(moveDy, moveDx);
-            myPos = finalPos;
-
-            const now = Date.now();
-            if (now - lastSendTime > SEND_INTERVAL) {
-                update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
-                lastSendTime = now;
-            }
-        }
-    }
-}
-
-function drawTank(x, y, angle, isEnemy) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.fillStyle = isEnemy ? '#e74c3c' : '#3498db';
-    ctx.fillRect(-15, -10, 30, 20);
-    ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.fillStyle = '#2c3e50';
-    ctx.fillRect(5, -3, 20, 6);
-    ctx.restore();
-}
-
-function drawMap() {
-    ctx.fillStyle = '#8B4513';
-    for (let obs of currentMap) {
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+    if (isPositionFree(newX, newY, radius, obstacles)) {
+        myPos.x = newX;
+        myPos.y = newY;
+        update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
     }
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawMap();
-    drawTank(enemyPos.x, enemyPos.y, 0, true);
-    drawTank(myPos.x, myPos.y, myAngle, false);
+
+    // Отрисовка препятствий
+    ctx.fillStyle = '#8B4513';
+    obstacles.forEach(obs => {
+        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+    });
+
+    // Вражеский танк (красный)
+    if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
+        ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
+    } else {
+        ctx.fillStyle = 'red';
+        ctx.beginPath();
+        ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2 * Math.PI);
+        ctx.fill();
+    }
+
+    // Свой танк (синий)
+    if (tankBlueImg.complete && tankBlueImg.naturalHeight !== 0) {
+        ctx.drawImage(tankBlueImg, myPos.x - 20, myPos.y - 20, 40, 40);
+    } else {
+        ctx.fillStyle = 'blue';
+        ctx.beginPath();
+        ctx.arc(myPos.x, myPos.y, 20, 0, 2 * Math.PI);
+        ctx.fill();
+    }
 }
