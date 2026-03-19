@@ -1,7 +1,6 @@
-// Генерация препятствий в зависимости от размеров окна
 export function getRandomMap(roomCode, width, height) {
     const seed = parseInt(roomCode) || 123456;
-    const mapType = seededRand(seed, 0, 3); // 0,1,2
+    const mapType = seededRand(seed, 0, 3);
 
     switch (mapType) {
         case 0: return mapForest(seed, width, height);
