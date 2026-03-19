@@ -5,7 +5,6 @@ export let gameActive = false;
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
 let myAngle = 0;
-let enemyAngle = 0;
 let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
@@ -13,11 +12,19 @@ let gameListener = null;
 let mapListener = null;
 let currentMap = [];
 let keys = {};
-const BASE_SPEED = 2; // Для теста оставим 2, но если слишком быстро – уменьши до 1.5 или 1
+const BASE_SPEED = 2;
 let lobbyScreenEl, gameScreenEl;
 
 let lastSendTime = 0;
 const SEND_INTERVAL = 50;
+
+// Счётчики для диагностики
+let initCount = 0;
+let startCount = 0;
+let loopCount = 0;
+let updateCount = 0;
+
+console.log('Скрипт game.js загружен'); // 1
 
 function collideRectCircle(rect, circleX, circleY, radius) {
     let closestX = Math.max(rect.x, Math.min(circleX, rect.x + rect.width));
@@ -42,6 +49,8 @@ function tryMove(oldX, oldY, newX, newY, radius = 20) {
 }
 
 export function initGame(components) {
+    initCount++;
+    console.log(`initGame вызван ${initCount} раз(а)`); // 2
     lobbyScreenEl = components.lobbyScreen;
     gameScreenEl = components.gameScreen;
     canvas = document.getElementById('gameCanvas');
@@ -65,6 +74,8 @@ function resizeCanvas() {
 }
 
 export function startGame() {
+    startCount++;
+    console.log(`startGame вызван ${startCount} раз(а)`); // 3
     if (!gameScreenEl || !lobbyScreenEl) return;
     lobbyScreenEl.classList.remove('active');
     gameScreenEl.classList.add('active');
@@ -109,6 +120,8 @@ export function listenGameState(code, playerNick) {
 
 function gameLoop() {
     if (!gameActive) return;
+    loopCount++;
+    if (loopCount % 60 === 0) console.log(`gameLoop работает, кадров: ${loopCount}`); // 4
     updateGame();
     draw();
     requestAnimationFrame(gameLoop);
@@ -116,6 +129,9 @@ function gameLoop() {
 
 function updateGame() {
     if (!currentRoomCode || !currentPlayerNick || !canvas) return;
+
+    updateCount++;
+    if (updateCount % 60 === 0) console.log(`updateGame вызван ${updateCount} раз`); // 5
 
     let dx = 0, dy = 0;
     if (keys['ArrowUp'] || keys['KeyW']) dy -= 1;
@@ -170,6 +186,6 @@ function drawMap() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawMap();
-    drawTank(enemyPos.x, enemyPos.y, enemyAngle, true);
+    drawTank(enemyPos.x, enemyPos.y, 0, true);
     drawTank(myPos.x, myPos.y, myAngle, false);
 }
