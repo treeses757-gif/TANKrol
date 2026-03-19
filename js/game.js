@@ -11,7 +11,6 @@ let currentPlayerNick = null;
 let gameListener = null;
 let keys = {};
 
-// Сохраняем ссылки на экраны лобби и игры
 let lobbyScreenEl, gameScreenEl;
 
 export function initGame(components) {
@@ -106,14 +105,15 @@ function updateGame() {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
+    ctx.imageSmoothingEnabled = false; // <--- отключаем сглаживание текстур
+
     if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
         ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
     } else {
         ctx.fillStyle = 'red';
         ctx.beginPath(); ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2 * Math.PI); ctx.fill();
     }
-    
+
     if (tankBlueImg.complete && tankBlueImg.naturalHeight !== 0) {
         ctx.drawImage(tankBlueImg, myPos.x - 20, myPos.y - 20, 40, 40);
     } else {
