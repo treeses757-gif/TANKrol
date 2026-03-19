@@ -16,11 +16,18 @@
             border-radius: 10px;
             text-align: center;
             z-index: 10;
+            min-width: 300px;
         }
         #lobby input, #lobby button {
             margin: 10px;
             padding: 10px;
             font-size: 16px;
+        }
+        #roomCodeDisplay {
+            font-size: 24px;
+            font-weight: bold;
+            color: yellow;
+            margin: 10px 0;
         }
         #game {
             display: none;
@@ -63,6 +70,7 @@
         <input id="roomCodeInput" type="text" placeholder="Код комнаты" maxlength="6">
         <button onclick="window.joinRoomFromInput()">Присоединиться</button>
         <div id="playersList"></div>
+        <div id="roomCodeDisplay"></div>
         <div id="errorMessage" class="error"></div>
     </div>
 
@@ -103,7 +111,6 @@
         let gameStateListener = null;
         let gameActive = false;
 
-        // Позиции
         let myPos = { x: 200, y: 200 };
         let enemyPos = { x: 600, y: 200 };
 
@@ -138,6 +145,7 @@
                 });
 
                 currentRoomCode = roomCode;
+                document.getElementById('roomCodeDisplay').textContent = 'Код комнаты: ' + roomCode;
                 document.getElementById('roomCodeSpan').textContent = roomCode;
                 listenRoom(roomCode);
                 showError('');
@@ -165,6 +173,7 @@
                 await update(ref(db, `rooms/${roomCode}/players`), { [currentPlayerId]: true });
 
                 currentRoomCode = roomCode;
+                document.getElementById('roomCodeDisplay').textContent = 'Код комнаты: ' + roomCode;
                 document.getElementById('roomCodeSpan').textContent = roomCode;
                 listenRoom(roomCode);
                 showError('');
@@ -261,12 +270,10 @@
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // враг красный
             ctx.fillStyle = 'red';
             ctx.beginPath();
             ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2*Math.PI);
             ctx.fill();
-            // свой синий
             ctx.fillStyle = 'blue';
             ctx.beginPath();
             ctx.arc(myPos.x, myPos.y, 20, 0, 2*Math.PI);
@@ -286,6 +293,7 @@
             gameActive = false;
             document.getElementById('lobby').style.display = 'block';
             document.getElementById('game').style.display = 'none';
+            document.getElementById('roomCodeDisplay').textContent = '';
             if (roomListener) roomListener();
             if (gameStateListener) gameStateListener();
             if (reason) showError(reason);
