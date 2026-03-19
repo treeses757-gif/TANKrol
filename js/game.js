@@ -10,8 +10,8 @@ let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
 let gameListener = null;
-let mapListener = null;     // слушатель карты
-let currentMap = [];        // массив препятствий
+let mapListener = null;
+let currentMap = [];
 let keys = {};
 let bullets = [];
 let powerups = [];
@@ -22,7 +22,6 @@ let enemySpeedMultiplier = 1;
 const BASE_SPEED = 3;
 let lobbyScreenEl, gameScreenEl;
 
-// Функция проверки столкновения прямоугольника с кругом (танк)
 function collideRectCircle(rect, circleX, circleY, radius) {
     let closestX = Math.max(rect.x, Math.min(circleX, rect.x + rect.width));
     let closestY = Math.max(rect.y, Math.min(circleY, rect.y + rect.height));
@@ -31,7 +30,6 @@ function collideRectCircle(rect, circleX, circleY, radius) {
     return (dx * dx + dy * dy) < radius * radius;
 }
 
-// Проверка, можно ли поставить танк в позицию (нет коллизий со стенами)
 function isPositionFree(x, y, radius = 20) {
     for (let obs of currentMap) {
         if (collideRectCircle(obs, x, y, radius)) {
@@ -41,12 +39,10 @@ function isPositionFree(x, y, radius = 20) {
     return true;
 }
 
-// Попытка переместить танк с учётом стен (пошаговое движение)
 function tryMove(oldX, oldY, newX, newY, radius = 20) {
     if (isPositionFree(newX, newY, radius)) {
         return { x: newX, y: newY };
     }
-    // Попробуем раздельно по X и Y
     if (isPositionFree(newX, oldY, radius)) {
         return { x: newX, y: oldY };
     }
@@ -80,11 +76,9 @@ export function initGame(components) {
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    // Спавн баффов (оставим как есть)
     setInterval(spawnPowerup, 10000);
 }
 
-// Установка карты (вызывается из room.js)
 export function setGameMap(map) {
     currentMap = map || [];
 }
@@ -93,8 +87,7 @@ function spawnPowerup() {
     if (!canvas || !gameActive) return;
     const x = 50 + Math.random() * (canvas.width - 100);
     const y = 50 + Math.random() * (canvas.height - 100);
-    // Проверим, что бафф не появился внутри стены
-    if (!isPositionFree(x, y, POWERUP_SIZE/2)) return; // если внутри стены - пропускаем
+    if (!isPositionFree(x, y, POWERUP_SIZE/2)) return;
     const type = Math.floor(Math.random() * POWERUP_COLORS.length);
     powerups.push({ x, y, type });
 }
@@ -134,7 +127,6 @@ export function setCurrentRoom(roomCode, playerNick) {
     currentRoomCode = roomCode;
     currentPlayerNick = playerNick;
 
-    // Подписываемся на карту
     if (roomCode) {
         if (mapListener) mapListener();
         mapListener = onValue(ref(db, `rooms/${roomCode}/map`), (snap) => {
@@ -184,16 +176,14 @@ function updateGame() {
         newX = Math.max(20, Math.min(canvas.width - 20, newX));
         newY = Math.max(20, Math.min(canvas.height - 20, newY));
 
-        // Проверка столкновений со стенами
         const finalPos = tryMove(myPos.x, myPos.y, newX, newY, 20);
         if (finalPos.x !== myPos.x || finalPos.y !== myPos.y) {
-            myPos = finalPos;
-            // Угол считаем по фактическому перемещению
             const moveDx = finalPos.x - myPos.x;
             const moveDy = finalPos.y - myPos.y;
             if (moveDx !== 0 || moveDy !== 0) {
                 myAngle = Math.atan2(moveDy, moveDx);
             }
+            myPos = finalPos;
             update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
         }
     }
@@ -219,13 +209,11 @@ function updateBullets() {
         b.x += b.vx;
         b.y += b.vy;
 
-        // Проверка выхода за границы
         if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
             bullets.splice(i, 1);
             continue;
         }
 
-        // Проверка столкновения с препятствиями
         let hitObstacle = false;
         for (let obs of currentMap) {
             if (b.x > obs.x && b.x < obs.x + obs.width &&
@@ -239,7 +227,6 @@ function updateBullets() {
             continue;
         }
 
-        // Проверка попадания во врага
         if (b.owner !== currentPlayerNick) {
             const dist = Math.hypot(b.x - myPos.x, b.y - myPos.y);
             if (dist < 20) {
@@ -317,7 +304,7 @@ function drawTank(x, y, angle, isEnemy) {
 }
 
 function drawMap() {
-    ctx.fillStyle = '#8B4513'; // коричневый
+    ctx.fillStyle = '#8B4513';
     ctx.strokeStyle = '#654321';
     ctx.lineWidth = 2;
     for (let obs of currentMap) {
