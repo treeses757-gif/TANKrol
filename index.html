@@ -60,7 +60,7 @@
         <h1>Дуэль кругов</h1>
         <button id="createBtn">Создать комнату</button>
         <br>
-        <input id="roomCodeInput" type="text" placeholder="Код комнаты" maxlength="6">
+        <input id="roomCodeInput" type="text" inputmode="text" placeholder="Код комнаты" maxlength="6" autocapitalize="characters" autocorrect="off">
         <button id="joinBtn">Присоединиться</button>
         <div id="roomCodeDisplay"></div>
         <div id="status"></div>
@@ -72,12 +72,10 @@
     </div>
 
     <script type="module">
-        // Firebase импорты
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { getDatabase, ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
-        // Конфиг
         const firebaseConfig = {
             apiKey: "AIzaSyC-iLxizH1umfeHSUZHLvpAt6XNm21p90Y",
             authDomain: "tanksduel-b90c7.firebaseapp.com",
@@ -91,7 +89,6 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // Переменные
         let currentPlayerId = null;
         let currentRoomCode = null;
         let roomListener = null;
@@ -102,7 +99,6 @@
         let enemyPos = { x: 600, y: 200 };
         let canvas, ctx;
 
-        // Авторизация
         signInAnonymously(auth).then(user => {
             currentPlayerId = user.user.uid;
             document.getElementById('status').textContent = 'Готов';
@@ -111,19 +107,16 @@
             document.getElementById('status').textContent = 'Ошибка авторизации';
         });
 
-        // Генерация кода
         function generateCode() {
             return Math.random().toString(36).substring(2, 6).toUpperCase();
         }
 
-        // Создание комнаты
         document.getElementById('createBtn').onclick = async () => {
             if (!currentPlayerId) return alert('Авторизация...');
             const code = generateCode();
             const roomRef = ref(db, `rooms/${code}`);
             const snap = await get(roomRef);
             if (snap.exists()) {
-                // Редкий случай, повтор
                 return document.getElementById('createBtn').onclick();
             }
             await set(roomRef, {
@@ -136,7 +129,6 @@
             listenRoom(code);
         };
 
-        // Присоединение
         document.getElementById('joinBtn').onclick = async () => {
             if (!currentPlayerId) return alert('Авторизация...');
             const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
@@ -153,7 +145,6 @@
             listenRoom(code);
         };
 
-        // Слушатель комнаты
         function listenRoom(code) {
             if (roomListener) roomListener();
             const roomRef = ref(db, `rooms/${code}`);
@@ -168,7 +159,6 @@
                 const count = Object.keys(players).length;
                 document.getElementById('status').textContent = `Игроков: ${count}/2`;
                 if (count === 2 && data.gameState === null) {
-                    // Хост создаёт игру
                     if (currentPlayerId === Object.keys(players)[0]) {
                         const gameState = {
                             [Object.keys(players)[0]]: { x: 200, y: 200 },
@@ -184,7 +174,6 @@
             });
         }
 
-        // Слушатель состояния игры
         function listenGameState(code) {
             if (gameListener) gameListener();
             gameListener = onValue(ref(db, `rooms/${code}/gameState`), (snap) => {
@@ -197,7 +186,6 @@
             });
         }
 
-        // Запуск игры
         function startGame() {
             document.getElementById('lobby').style.display = 'none';
             document.getElementById('game').style.display = 'block';
@@ -209,7 +197,6 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // Игровой цикл
         function gameLoop() {
             if (!gameActive) return;
             updateGame();
@@ -217,11 +204,9 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // Управление
         let keys = {};
         window.addEventListener('keydown', (e) => {
             keys[e.code] = true;
-            // Предотвращаем скролл для стрелок и WASD
             if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) {
                 e.preventDefault();
             }
@@ -233,23 +218,10 @@
             const speed = 3;
             let moved = false;
 
-            // Стрелки или WASD
-            if (keys['ArrowUp'] || keys['KeyW']) {
-                myPos.y -= speed;
-                moved = true;
-            }
-            if (keys['ArrowDown'] || keys['KeyS']) {
-                myPos.y += speed;
-                moved = true;
-            }
-            if (keys['ArrowLeft'] || keys['KeyA']) {
-                myPos.x -= speed;
-                moved = true;
-            }
-            if (keys['ArrowRight'] || keys['KeyD']) {
-                myPos.x += speed;
-                moved = true;
-            }
+            if (keys['ArrowUp'] || keys['KeyW']) { myPos.y -= speed; moved = true; }
+            if (keys['ArrowDown'] || keys['KeyS']) { myPos.y += speed; moved = true; }
+            if (keys['ArrowLeft'] || keys['KeyA']) { myPos.x -= speed; moved = true; }
+            if (keys['ArrowRight'] || keys['KeyD']) { myPos.x += speed; moved = true; }
 
             if (moved) {
                 myPos.x = Math.max(20, Math.min(canvas.width - 20, myPos.x));
@@ -258,7 +230,6 @@
             }
         }
 
-        // Отрисовка
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = 'red';
@@ -278,7 +249,6 @@
             }
         }
 
-        // Выход
         function leaveRoom() {
             if (currentPlayerId && currentRoomCode) {
                 remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`));
