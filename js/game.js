@@ -1,19 +1,25 @@
 import { db } from './firebase.js';
 import { ref, onValue, update } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { tankBlueImg, tankRedImg } from './textures.js';
-import { isPositionFree } from './utils.js';
+import { isPositionFree, circleRectCollide } from './utils.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
+let myBullets = [];
+let enemyBullets = [];
 let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
 let gameListener = null;
 let keys = {};
+let lastMoveDir = { x: 0, y: -1 };
 let obstacles = [];
 let lastTimestamp = 0;
-const PLAYER_SPEED = 200; // пикселей в секунду
+const PLAYER_SPEED = 200;
+const BULLET_SPEED = 400;
+const BULLET_RADIUS = 5;
+const PLAYER_RADIUS = 20;
 
 let lobbyScreenEl, gameScreenEl;
 
@@ -24,10 +30,12 @@ export function initGame(components) {
     ctx = canvas.getContext('2d');
 
     window.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
-            return;
-        }
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         keys[e.code] = true;
+        if (e.code === 'Space') {
+            e.preventDefault();
+            shoot();
+        }
         if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
@@ -45,14 +53,29 @@ function resizeCanvas() {
     }
 }
 
+function shoot() {
+    if (!gameActive || !currentRoomCode) return;
+    const bullet = {
+        x: myPos.x,
+        y: myPos.y,
+        vx: lastMoveDir.x * BULLET_SPEED,
+        vy: lastMoveDir.y * BULLET_SPEED,
+        owner: currentPlayerNick
+    };
+    myBullets.push(bullet);
+    update(ref(db), {
+        [`rooms/${currentRoomCode}/gameState/bullets/${Date.now()}`]: bullet
+    });
+}
+
 export function startGame() {
-    if (!gameScreenEl || !lobbyScreenEl) {
-        console.error('Game screens not initialized');
-        return;
-    }
+    if (!gameScreenEl || !lobbyScreenEl) return;
     lobbyScreenEl.classList.remove('active');
     gameScreenEl.classList.add('active');
     gameActive = true;
+    myBullets = [];
+    enemyBullets = [];
+    lastTimestamp = 0;
     requestAnimationFrame(gameLoop);
 }
 
@@ -79,8 +102,12 @@ export function listenGameState(code, playerNick) {
         const state = snap.val();
         if (!state) return;
         for (let id in state) {
+            if (id === 'bullets') continue;
             if (id === playerNick) myPos = state[id];
-            else enemyPos = state[id];
+            else if (id !== 'bullets') enemyPos = state[id];
+        }
+        if (state.bullets) {
+            enemyBullets = Object.values(state.bullets).filter(b => b.owner !== playerNick);
         }
     });
 }
@@ -88,7 +115,7 @@ export function listenGameState(code, playerNick) {
 export function loadMap(roomCode) {
     onValue(ref(db, `rooms/${roomCode}/map`), (snap) => {
         obstacles = snap.val() || [];
-        console.log('Map loaded:', obstacles);
+        console.log('Map loaded:', obstacles.length, 'obstacles');
     }, { onlyOnce: true });
 }
 
@@ -99,6 +126,7 @@ function gameLoop(timestamp) {
     lastTimestamp = timestamp;
 
     updateGame(deltaTime);
+    updateBullets(deltaTime);
     draw();
     requestAnimationFrame(gameLoop);
 }
@@ -109,48 +137,107 @@ function updateGame(deltaTime) {
     let newX = myPos.x;
     let newY = myPos.y;
 
-    if (keys['ArrowUp'] || keys['KeyW']) newY -= move;
-    if (keys['ArrowDown'] || keys['KeyS']) newY += move;
-    if (keys['ArrowLeft'] || keys['KeyA']) newX -= move;
-    if (keys['ArrowRight'] || keys['KeyD']) newX += move;
+    if (keys['ArrowUp'] || keys['KeyW']) { newY -= move; lastMoveDir = { x: 0, y: -1 }; }
+    if (keys['ArrowDown'] || keys['KeyS']) { newY += move; lastMoveDir = { x: 0, y: 1 }; }
+    if (keys['ArrowLeft'] || keys['KeyA']) { newX -= move; lastMoveDir = { x: -1, y: 0 }; }
+    if (keys['ArrowRight'] || keys['KeyD']) { newX += move; lastMoveDir = { x: 1, y: 0 }; }
 
-    const radius = 20;
-    newX = Math.max(radius, Math.min(canvas.width - radius, newX));
-    newY = Math.max(radius, Math.min(canvas.height - radius, newY));
+    newX = Math.max(PLAYER_RADIUS, Math.min(canvas.width - PLAYER_RADIUS, newX));
+    newY = Math.max(PLAYER_RADIUS, Math.min(canvas.height - PLAYER_RADIUS, newY));
 
-    if (isPositionFree(newX, newY, radius, obstacles)) {
+    if (isPositionFree(newX, newY, PLAYER_RADIUS, obstacles)) {
         myPos.x = newX;
         myPos.y = newY;
         update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
     }
 }
 
+function updateBullets(deltaTime) {
+    for (let i = myBullets.length - 1; i >= 0; i--) {
+        const b = myBullets[i];
+        b.x += b.vx * deltaTime;
+        b.y += b.vy * deltaTime;
+
+        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+            myBullets.splice(i, 1);
+            continue;
+        }
+
+        let hit = false;
+        for (let obs of obstacles) {
+            if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
+                myBullets.splice(i, 1);
+                hit = true;
+                break;
+            }
+        }
+        if (hit) continue;
+
+        const dx = b.x - enemyPos.x;
+        const dy = b.y - enemyPos.y;
+        if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
+            alert('Вы победили!');
+            stopGame();
+            return;
+        }
+    }
+
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const b = enemyBullets[i];
+        b.x += b.vx * deltaTime;
+        b.y += b.vy * deltaTime;
+
+        const dx = b.x - myPos.x;
+        const dy = b.y - myPos.y;
+        if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
+            alert('Вы проиграли!');
+            stopGame();
+            return;
+        }
+
+        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+            enemyBullets.splice(i, 1);
+        }
+    }
+}
+
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Отрисовка препятствий
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
     });
 
-    // Вражеский танк (красный)
+    ctx.fillStyle = '#00f';
+    myBullets.forEach(b => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, BULLET_RADIUS, 0, 2 * Math.PI);
+        ctx.fill();
+    });
+
+    ctx.fillStyle = '#f00';
+    enemyBullets.forEach(b => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, BULLET_RADIUS, 0, 2 * Math.PI);
+        ctx.fill();
+    });
+
     if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
         ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
     } else {
         ctx.fillStyle = 'red';
         ctx.beginPath();
-        ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2 * Math.PI);
+        ctx.arc(enemyPos.x, enemyPos.y, PLAYER_RADIUS, 0, 2 * Math.PI);
         ctx.fill();
     }
 
-    // Свой танк (синий)
     if (tankBlueImg.complete && tankBlueImg.naturalHeight !== 0) {
         ctx.drawImage(tankBlueImg, myPos.x - 20, myPos.y - 20, 40, 40);
     } else {
         ctx.fillStyle = 'blue';
         ctx.beginPath();
-        ctx.arc(myPos.x, myPos.y, 20, 0, 2 * Math.PI);
+        ctx.arc(myPos.x, myPos.y, PLAYER_RADIUS, 0, 2 * Math.PI);
         ctx.fill();
     }
 }
