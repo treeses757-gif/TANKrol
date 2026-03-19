@@ -1,84 +1,47 @@
-import { db } from './firebase.js';
-import { initAuth } from './auth.js';
-import { initRoom } from './room.js';
-import { initGame, startGame, stopGame, setCurrentRoom, listenGameState, gameActive } from './game.js';
+export function getRandomMap(roomCode) {
+    let seed = parseInt(roomCode) || Math.floor(Math.random() * 1000);
+    // Функция генерации псевдослучайного числа на основе seed
+    const rand = (max) => {
+        seed = (seed * 9301 + 49297) % 233280; // обновляем seed
+        return Math.floor((seed / 233280) * max);
+    };
 
-// Элементы DOM
-const authScreen = document.getElementById('auth-screen');
-const lobbyScreen = document.getElementById('lobby');
-const gameScreen = document.getElementById('game');
-const loginForm = document.getElementById('login-form');
-const registerForm = document.getElementById('register-form');
-const showLoginBtn = document.getElementById('show-login');
-const showRegisterBtn = document.getElementById('show-register');
-const userNickSpan = document.getElementById('user-nick');
-const logoutBtn = document.getElementById('logoutBtn');
-
-const createBtn = document.getElementById('createBtn');
-const joinBtn = document.getElementById('joinBtn');
-const roomCodeInput = document.getElementById('roomCodeInput');
-const roomCodeDisplay = document.getElementById('roomCodeDisplay');
-const roomCodeSpan = document.getElementById('roomCodeSpan');
-const copyBtn = document.getElementById('copyBtn');
-const statusDiv = document.getElementById('status');
-
-let currentPlayerNick = localStorage.getItem('playerNick') || null;
-
-if (currentPlayerNick) {
-    authScreen.classList.remove('active');
-    lobbyScreen.classList.add('active');
-    userNickSpan.textContent = currentPlayerNick;
+    const maps = [mapForest, mapArena, mapMaze];
+    const index = rand(maps.length);
+    return maps[index](rand);
 }
 
-// Инициализация игры
-initGame({ gameScreen, lobbyScreen });
-
-// Инициализация комнаты
-const roomHandlers = initRoom({
-    createBtn,
-    joinBtn,
-    roomCodeInput,
-    roomCodeDisplay,
-    roomCodeSpan,
-    copyBtn,
-    statusDiv,
-    onRoomJoined: (code) => {
-        setCurrentRoom(code, currentPlayerNick);
-        listenGameState(code, currentPlayerNick);
-        startGame();
-    },
-    onRoomLeft: () => {
-        stopGame();
-        setCurrentRoom(null, null);
+function mapForest(rnd) {
+    const obstacles = [];
+    const count = 20 + rnd(10);
+    for (let i = 0; i < count; i++) {
+        obstacles.push({
+            x: 50 + rnd(700),
+            y: 50 + rnd(400),
+            width: 30 + rnd(30),
+            height: 30 + rnd(30)
+        });
     }
-});
+    return obstacles;
+}
 
-// Инициализация аутентификации
-initAuth({
-    authScreen,
-    lobbyScreen,
-    loginForm,
-    registerForm,
-    showLoginBtn,
-    showRegisterBtn,
-    userNickSpan,
-    logoutBtn,
-    onLoginSuccess: (nick) => {
-        currentPlayerNick = nick;
-        roomHandlers.setPlayerNick(nick);
-    },
-    onLogout: () => {
-        currentPlayerNick = null;
-        roomHandlers.leaveRoom();
-        stopGame();
-        roomHandlers.setPlayerNick(null);
-    }
-});
+function mapArena(rnd) {
+    return [
+        { x: 200, y: 150, width: 60, height: 60 },
+        { x: 500, y: 150, width: 60, height: 60 },
+        { x: 200, y: 350, width: 60, height: 60 },
+        { x: 500, y: 350, width: 60, height: 60 },
+        { x: 350, y: 250, width: 80, height: 80 }
+    ];
+}
 
-roomHandlers.setPlayerNick(currentPlayerNick);
-
-window.addEventListener('beforeunload', () => {
-    if (currentPlayerNick && roomHandlers.getRoomCode()) {
-        // Firebase очистит при отключении
-    }
-});
+function mapMaze(rnd) {
+    return [
+        { x: 150, y: 80, width: 20, height: 200 },
+        { x: 400, y: 200, width: 20, height: 250 },
+        { x: 600, y: 100, width: 20, height: 300 },
+        { x: 200, y: 300, width: 250, height: 20 },
+        { x: 450, y: 400, width: 200, height: 20 },
+        { x: 80, y: 450, width: 300, height: 20 }
+    ];
+}
