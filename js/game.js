@@ -19,8 +19,12 @@ const POWERUP_SIZE = 20;
 const POWERUP_COLORS = ['#f1c40f', '#e67e22', '#2ecc71'];
 let mySpeedMultiplier = 1;
 let enemySpeedMultiplier = 1;
-const BASE_SPEED = 3;
+const BASE_SPEED = 2; // уменьшили с 3 до 2
 let lobbyScreenEl, gameScreenEl;
+
+// Для throttle отправки позиции
+let lastSendTime = 0;
+const SEND_INTERVAL = 50; // миллисекунд
 
 function collideRectCircle(rect, circleX, circleY, radius) {
     let closestX = Math.max(rect.x, Math.min(circleX, rect.x + rect.width));
@@ -184,7 +188,13 @@ function updateGame() {
                 myAngle = Math.atan2(moveDy, moveDx);
             }
             myPos = finalPos;
-            update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
+
+            // Отправляем позицию не чаще чем раз в SEND_INTERVAL
+            const now = Date.now();
+            if (now - lastSendTime > SEND_INTERVAL) {
+                update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
+                lastSendTime = now;
+            }
         }
     }
 }
