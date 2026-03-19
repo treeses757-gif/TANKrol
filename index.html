@@ -221,7 +221,10 @@
         let keys = {};
         window.addEventListener('keydown', (e) => {
             keys[e.code] = true;
-            if (e.key.startsWith('Arrow')) e.preventDefault();
+            // Предотвращаем скролл для стрелок и WASD
+            if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) {
+                e.preventDefault();
+            }
         });
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
@@ -229,13 +232,28 @@
             if (!currentRoomCode || !currentPlayerId || !canvas) return;
             const speed = 3;
             let moved = false;
-            if (keys['ArrowUp']) { myPos.y -= speed; moved = true; }
-            if (keys['ArrowDown']) { myPos.y += speed; moved = true; }
-            if (keys['ArrowLeft']) { myPos.x -= speed; moved = true; }
-            if (keys['ArrowRight']) { myPos.x += speed; moved = true; }
+
+            // Стрелки или WASD
+            if (keys['ArrowUp'] || keys['KeyW']) {
+                myPos.y -= speed;
+                moved = true;
+            }
+            if (keys['ArrowDown'] || keys['KeyS']) {
+                myPos.y += speed;
+                moved = true;
+            }
+            if (keys['ArrowLeft'] || keys['KeyA']) {
+                myPos.x -= speed;
+                moved = true;
+            }
+            if (keys['ArrowRight'] || keys['KeyD']) {
+                myPos.x += speed;
+                moved = true;
+            }
+
             if (moved) {
-                myPos.x = Math.max(20, Math.min(canvas.width-20, myPos.x));
-                myPos.y = Math.max(20, Math.min(canvas.height-20, myPos.y));
+                myPos.x = Math.max(20, Math.min(canvas.width - 20, myPos.x));
+                myPos.y = Math.max(20, Math.min(canvas.height - 20, myPos.y));
                 update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerId}`]: myPos });
             }
         }
@@ -245,11 +263,11 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = 'red';
             ctx.beginPath();
-            ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2*Math.PI);
+            ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2 * Math.PI);
             ctx.fill();
             ctx.fillStyle = 'blue';
             ctx.beginPath();
-            ctx.arc(myPos.x, myPos.y, 20, 0, 2*Math.PI);
+            ctx.arc(myPos.x, myPos.y, 20, 0, 2 * Math.PI);
             ctx.fill();
         }
 
