@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Дуэль кругов</title>
+    <title>Дуэль танков</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
     <!-- Экран аутентификации -->
     <div id="auth-screen" class="screen active">
         <div class="auth-container">
-            <h1>Дуэль кругов</h1>
+            <h1>Дуэль танков</h1>
             <div class="toggle-buttons">
                 <button id="show-login" class="toggle-btn active">Вход</button>
                 <button id="show-register" class="toggle-btn">Регистрация</button>
             </div>
             
-            <!-- Форма входа -->
             <form id="login-form" class="auth-form active">
                 <input type="text" id="login-username" placeholder="Ваш ник" required>
                 <input type="password" id="login-password" placeholder="Пароль" required>
@@ -24,7 +23,6 @@
                 <div id="login-error" class="error-message"></div>
             </form>
             
-            <!-- Форма регистрации -->
             <form id="register-form" class="auth-form">
                 <input type="text" id="register-username" placeholder="Придумайте ник" required>
                 <input type="password" id="register-password" placeholder="Пароль" required>
