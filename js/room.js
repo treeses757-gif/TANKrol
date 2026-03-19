@@ -1,6 +1,6 @@
 import { db } from './firebase.js';
 import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-import { startGame, listenGameState, gameActive, setCurrentRoom, loadMap } from './game.js';
+import { startGame, listenGameState, gameActive, loadMap } from './game.js';
 import { getRandomMap } from './maps.js';
 import { isPositionFree } from './utils.js';
 
@@ -25,7 +25,6 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Поиск свободной позиции с учётом размеров окна
     function findFreePosition(obstacles, radius = 20, maxAttempts = 2000) {
         const margin = radius;
         const maxX = window.innerWidth - margin;
@@ -37,7 +36,6 @@ export function initRoom(components) {
                 return { x, y };
             }
         }
-        // Запасной вариант
         return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     }
 
@@ -50,7 +48,7 @@ export function initRoom(components) {
             if (snap.exists()) {
                 return createBtn.onclick();
             }
-            const map = getRandomMap(code);
+            const map = getRandomMap(code, window.innerWidth, window.innerHeight);
             await set(roomRef, {
                 players: { [currentPlayerNick]: true },
                 gameState: null,
@@ -112,7 +110,6 @@ export function initRoom(components) {
             const count = Object.keys(players).length;
             statusDiv.textContent = `Игроков: ${count}/2`;
 
-            // Инициализация gameState при подключении второго игрока
             if (count === 2 && data.gameState === null) {
                 if (currentPlayerNick === Object.keys(players)[0]) {
                     const obstacles = data.map || [];
@@ -129,7 +126,6 @@ export function initRoom(components) {
                 }
             }
 
-            // Запуск игры, если оба игрока на месте и состояние игры существует
             if (count === 2 && data.gameState !== null && !gameActive) {
                 loadMap(code);
                 startGame();
