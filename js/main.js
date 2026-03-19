@@ -286,11 +286,27 @@ function gameLoop() {
 
 // Управление
 let keys = {};
+
+// *** ИСПРАВЛЕНИЕ: теперь клавиши не перехватываются в полях ввода ***
 window.addEventListener('keydown', (e) => {
+    // Если фокус на поле ввода или текстовой области – не мешаем вводу
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+        return; // разрешаем стандартное поведение
+    }
     keys[e.code] = true;
     if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) e.preventDefault();
 });
-window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+window.addEventListener('keyup', (e) => {
+    // Не блокируем отпускание клавиш, но в любом случае очищаем состояние keys
+    // Проверка на поля ввода не обязательна, но можно оставить для симметрии
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+        // Не сбрасываем keys? На самом деле даже если мы отпускаем клавишу вне поля,
+        // а зажали внутри, то код не попал в keys, поэтому и удалять нечего.
+        // Оставим без изменений.
+    }
+    keys[e.code] = false;
+});
 
 function updateGame() {
     if (!currentRoomCode || !currentPlayerNick || !canvas) return;
