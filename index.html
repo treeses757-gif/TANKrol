@@ -72,9 +72,17 @@
     </div>
 
     <script type="module">
-        // ----- Импорты Firebase (update переименован в firebaseUpdate) -----
+        // ----- Импорты с переименованием update -----
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-        import { getDatabase, ref, set, update as firebaseUpdate, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+        import { 
+            getDatabase, 
+            ref, 
+            set, 
+            update as fbUpdate,   // переименовано, чтобы избежать конфликта
+            onValue, 
+            get, 
+            remove 
+        } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
         // ----- Конфигурация Firebase -----
@@ -140,7 +148,6 @@
                 const roomCode = generateRoomCode();
                 const roomRef = ref(db, `rooms/${roomCode}`);
                 
-                // Проверяем, не занят ли код
                 const snapshot = await get(roomRef);
                 if (snapshot.exists()) {
                     return createRoom(); // пробуем другой
@@ -163,7 +170,7 @@
                 isHost = true;
                 listenRoom(roomCode);
                 document.getElementById('roomCodeSpan').textContent = roomCode;
-                showError(''); // очищаем ошибки
+                showError(''); 
                 console.log('Комната создана:', roomCode);
             } catch (err) {
                 console.error('Ошибка создания комнаты:', err);
@@ -206,7 +213,7 @@
                     ready: false
                 };
 
-                await firebaseUpdate(ref(db, `rooms/${roomCode}/players`), {
+                await fbUpdate(ref(db, `rooms/${roomCode}/players`), {
                     [currentPlayerId]: playerData
                 });
 
@@ -235,7 +242,6 @@
             roomListener = onValue(roomRef, (snapshot) => {
                 const data = snapshot.val();
                 if (!data) {
-                    // Комната удалена
                     leaveRoom('Комната была закрыта');
                     return;
                 }
@@ -243,17 +249,13 @@
                 players = data.players || {};
                 const playerCount = Object.keys(players).length;
                 
-                // Обновляем интерфейс лобби
                 updateLobbyUI(roomCode, players, playerCount);
                 
-                // Если в комнате два игрока и игра ещё не началась (gameState = null)
                 if (playerCount === 2 && data.gameState === null) {
                     startGame(roomCode, players, isHost);
                 }
                 
-                // Если игра уже идёт, но мы только что подключились и gameState уже есть
                 if (playerCount === 2 && data.gameState !== null && !gameActive) {
-                    // Уже идёт игра, просто показываем поле
                     showGameScreen(roomCode);
                     listenGameState(roomCode);
                 }
@@ -279,10 +281,9 @@
 
         function startGame(roomCode, players, isHost) {
             if (isHost) {
-                // Хост инициализирует игровое состояние
                 const playerIds = Object.keys(players);
                 const gameState = {
-                    turn: playerIds[0], // ход первого игрока (хоста)
+                    turn: playerIds[0],
                     tanks: {
                         [playerIds[0]]: { x: 200, y: 200, angle: 0 },
                         [playerIds[1]]: { x: 600, y: 200, angle: Math.PI }
@@ -295,7 +296,6 @@
                     });
             }
             
-            // Показываем экран игры
             showGameScreen(roomCode);
             listenGameState(roomCode);
         }
@@ -305,13 +305,11 @@
             document.getElementById('game').style.display = 'block';
             gameActive = true;
             
-            // Инициализация canvas
             canvas = document.getElementById('gameCanvas');
             ctx = canvas.getContext('2d');
             resizeCanvas();
             window.addEventListener('resize', resizeCanvas);
             
-            // Запуск игрового цикла
             requestAnimationFrame(gameLoop);
         }
 
@@ -323,7 +321,6 @@
                 const state = snapshot.val();
                 if (!state || !state.tanks) return;
                 
-                // Обновляем позиции врага
                 for (let id in state.tanks) {
                     if (id !== currentPlayerId) {
                         enemyTank = state.tanks[id];
@@ -334,10 +331,10 @@
             });
         }
 
-        // Игровой цикл (отрисовка)
+        // Игровой цикл
         function gameLoop() {
             if (!gameActive) return;
-            updateGame(); // обработка ввода
+            updateGame(); 
             draw();
             requestAnimationFrame(gameLoop);
         }
@@ -347,21 +344,19 @@
         window.addEventListener('keydown', (e) => keys[e.code] = true);
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-        // Локальная функция обновления игры (переименована, чтобы не конфликтовать с firebaseUpdate)
+        // Локальная функция обновления игры (названа updateGame, не конфликтует с fbUpdate)
         function updateGame() {
             if (!gameActive || !currentRoomCode || !currentPlayerId) return;
 
-            // Управление своим танком
             const speed = 3;
             if (keys['ArrowUp']) myTank.y -= speed;
             if (keys['ArrowDown']) myTank.y += speed;
             if (keys['ArrowLeft']) myTank.x -= speed;
             if (keys['ArrowRight']) myTank.x += speed;
 
-            // Отправляем свою позицию в Firebase
             const updates = {};
             updates[`rooms/${currentRoomCode}/gameState/tanks/${currentPlayerId}`] = myTank;
-            firebaseUpdate(ref(db), updates).catch(err => {
+            fbUpdate(ref(db), updates).catch(err => {
                 console.error('Ошибка отправки позиции:', err);
             });
         }
@@ -369,12 +364,10 @@
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Препятствия
             ctx.fillStyle = '#5a3e1a';
             ctx.fillRect(300, 150, 50, 200);
             ctx.fillRect(500, 100, 100, 50);
             
-            // Вражеский танк
             if (enemyTankImage.complete) {
                 ctx.save();
                 ctx.translate(enemyTank.x, enemyTank.y);
@@ -383,7 +376,6 @@
                 ctx.restore();
             }
             
-            // Свой танк
             if (tankImage.complete) {
                 ctx.save();
                 ctx.translate(myTank.x, myTank.y);
@@ -413,10 +405,8 @@
             if (reason) showError(reason);
         }
 
-        // При закрытии вкладки (пытаемся удалить игрока)
         window.addEventListener('beforeunload', () => {
             if (currentPlayerId && currentRoomCode) {
-                // Используем sendBeacon для надёжности (но не гарантировано)
                 navigator.sendBeacon?.('https://dummy');
             }
         });
