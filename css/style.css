@@ -72,7 +72,6 @@ body {
     display: block;
 }
 
-/* ===== ИСПРАВЛЕНО: поля ввода ника теперь точно видны ===== */
 .auth-form input {
     width: 100%;
     padding: 12px 15px;
@@ -242,6 +241,7 @@ body {
     height: 100vh;
     background: #2a6f2a;
     display: block;
+    image-rendering: crisp-edges; /* для чёткости */
 }
 
 #roomInfo {
