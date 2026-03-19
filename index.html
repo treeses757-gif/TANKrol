@@ -24,74 +24,60 @@
             font-size: 16px;
         }
         #roomCodeDisplay {
-            font-size: 24px;
+            font-size: 32px;
             font-weight: bold;
             color: yellow;
-            margin: 10px 0;
+            margin: 20px 0;
+            min-height: 40px;
         }
         #game {
             display: none;
             width: 100vw;
             height: 100vh;
             background: #2a6f2a;
-            position: relative;
         }
         #gameCanvas {
-            display: block;
             width: 100%;
             height: 100%;
-            background: #3a7e3a;
         }
         #roomInfo {
             position: absolute;
             top: 10px;
             left: 10px;
             color: white;
-            background: rgba(0,0,0,0.5);
+            background: black;
             padding: 5px 10px;
             border-radius: 5px;
-            font-size: 14px;
         }
-        #playersList {
-            margin-top: 20px;
-            font-size: 18px;
-        }
-        .error {
-            color: #ff6b6b;
+        #status {
             margin-top: 10px;
+            color: #aaa;
         }
     </style>
 </head>
 <body>
     <div id="lobby">
         <h1>Дуэль кругов</h1>
-        <button onclick="window.createRoom()">Создать комнату</button>
+        <button id="createBtn">Создать комнату</button>
         <br>
         <input id="roomCodeInput" type="text" placeholder="Код комнаты" maxlength="6">
-        <button onclick="window.joinRoomFromInput()">Присоединиться</button>
-        <div id="playersList"></div>
+        <button id="joinBtn">Присоединиться</button>
         <div id="roomCodeDisplay"></div>
-        <div id="errorMessage" class="error"></div>
+        <div id="status"></div>
     </div>
 
     <div id="game">
         <canvas id="gameCanvas"></canvas>
-        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span> <button onclick="window.leaveRoom()">Выйти</button></div>
+        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span></div>
     </div>
 
     <script type="module">
+        // Firebase импорты
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-        import { 
-            getDatabase, 
-            ref, 
-            set, 
-            update, 
-            onValue, 
-            get, 
-            remove 
-        } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+        import { getDatabase, ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
+        // Конфиг
         const firebaseConfig = {
             apiKey: "AIzaSyC-iLxizH1umfeHSUZHLvpAt6XNm21p90Y",
             authDomain: "tanksduel-b90c7.firebaseapp.com",
@@ -105,118 +91,114 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
+        // Переменные
         let currentPlayerId = null;
         let currentRoomCode = null;
         let roomListener = null;
-        let gameStateListener = null;
+        let gameListener = null;
         let gameActive = false;
 
         let myPos = { x: 200, y: 200 };
         let enemyPos = { x: 600, y: 200 };
-
         let canvas, ctx;
 
-        signInAnonymously(auth).then((userCredential) => {
-            currentPlayerId = userCredential.user.uid;
+        // Авторизация
+        signInAnonymously(auth).then(user => {
+            currentPlayerId = user.user.uid;
+            document.getElementById('status').textContent = 'Готов';
         }).catch(err => {
             console.error(err);
-            showError('Ошибка авторизации');
+            document.getElementById('status').textContent = 'Ошибка авторизации';
         });
 
-        function showError(msg) {
-            document.getElementById('errorMessage').textContent = msg;
-        }
-
-        function generateRoomCode() {
+        // Генерация кода
+        function generateCode() {
             return Math.random().toString(36).substring(2, 6).toUpperCase();
         }
 
-        window.createRoom = async function() {
-            if (!currentPlayerId) return showError('Авторизация...');
-            try {
-                const roomCode = generateRoomCode();
-                const roomRef = ref(db, `rooms/${roomCode}`);
-                const snapshot = await get(roomRef);
-                if (snapshot.exists()) return createRoom();
-
-                await set(roomRef, {
-                    players: { [currentPlayerId]: true },
-                    gameState: null
-                });
-
-                currentRoomCode = roomCode;
-                document.getElementById('roomCodeDisplay').textContent = 'Код комнаты: ' + roomCode;
-                document.getElementById('roomCodeSpan').textContent = roomCode;
-                listenRoom(roomCode);
-                showError('');
-            } catch (err) {
-                showError('Ошибка создания');
+        // Создание комнаты
+        document.getElementById('createBtn').onclick = async () => {
+            if (!currentPlayerId) return alert('Авторизация...');
+            const code = generateCode();
+            const roomRef = ref(db, `rooms/${code}`);
+            const snap = await get(roomRef);
+            if (snap.exists()) {
+                // Редкий случай, повтор
+                return document.getElementById('createBtn').onclick();
             }
+            await set(roomRef, {
+                players: { [currentPlayerId]: true },
+                gameState: null
+            });
+            currentRoomCode = code;
+            document.getElementById('roomCodeDisplay').textContent = 'Код: ' + code;
+            document.getElementById('roomCodeSpan').textContent = code;
+            listenRoom(code);
         };
 
-        window.joinRoomFromInput = async function() {
-            if (!currentPlayerId) return showError('Авторизация...');
-            const roomCode = document.getElementById('roomCodeInput').value.trim().toUpperCase();
-            if (!roomCode) return;
-            await joinRoom(roomCode);
+        // Присоединение
+        document.getElementById('joinBtn').onclick = async () => {
+            if (!currentPlayerId) return alert('Авторизация...');
+            const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
+            if (!code) return;
+            const roomRef = ref(db, `rooms/${code}`);
+            const snap = await get(roomRef);
+            if (!snap.exists()) return alert('Комната не найдена');
+            const players = snap.val().players || {};
+            if (Object.keys(players).length >= 2) return alert('Комната полна');
+            await update(ref(db, `rooms/${code}/players`), { [currentPlayerId]: true });
+            currentRoomCode = code;
+            document.getElementById('roomCodeDisplay').textContent = 'Код: ' + code;
+            document.getElementById('roomCodeSpan').textContent = code;
+            listenRoom(code);
         };
 
-        async function joinRoom(roomCode) {
-            try {
-                const roomRef = ref(db, `rooms/${roomCode}`);
-                const snapshot = await get(roomRef);
-                if (!snapshot.exists()) return showError('Комната не найдена');
-
-                const players = snapshot.val().players || {};
-                if (Object.keys(players).length >= 2) return showError('Комната полна');
-
-                await update(ref(db, `rooms/${roomCode}/players`), { [currentPlayerId]: true });
-
-                currentRoomCode = roomCode;
-                document.getElementById('roomCodeDisplay').textContent = 'Код комнаты: ' + roomCode;
-                document.getElementById('roomCodeSpan').textContent = roomCode;
-                listenRoom(roomCode);
-                showError('');
-            } catch (err) {
-                showError('Ошибка подключения');
-            }
-        }
-
-        function listenRoom(roomCode) {
-            const roomRef = ref(db, `rooms/${roomCode}`);
+        // Слушатель комнаты
+        function listenRoom(code) {
             if (roomListener) roomListener();
-            roomListener = onValue(roomRef, (snapshot) => {
-                const data = snapshot.val();
-                if (!data) return leaveRoom('Комната закрыта');
-
-                const players = data.players || {};
-                const playerCount = Object.keys(players).length;
-                document.getElementById('playersList').innerHTML = 
-                    `<p>Игроков: ${playerCount}/2</p>` +
-                    (playerCount === 2 ? '<p>Игра начинается...</p>' : '<p>Ожидание игрока...</p>');
-
-                if (playerCount === 2 && data.gameState === null) {
-                    startGame(roomCode, players);
+            const roomRef = ref(db, `rooms/${code}`);
+            roomListener = onValue(roomRef, (snap) => {
+                const data = snap.val();
+                if (!data) {
+                    alert('Комната закрыта');
+                    leaveRoom();
+                    return;
                 }
-                if (playerCount === 2 && data.gameState !== null && !gameActive) {
-                    showGameScreen();
-                    listenGameState(roomCode);
+                const players = data.players || {};
+                const count = Object.keys(players).length;
+                document.getElementById('status').textContent = `Игроков: ${count}/2`;
+                if (count === 2 && data.gameState === null) {
+                    // Хост создаёт игру
+                    if (currentPlayerId === Object.keys(players)[0]) {
+                        const gameState = {
+                            [Object.keys(players)[0]]: { x: 200, y: 200 },
+                            [Object.keys(players)[1]]: { x: 600, y: 200 }
+                        };
+                        set(ref(db, `rooms/${code}/gameState`), gameState);
+                    }
+                }
+                if (count === 2 && data.gameState !== null && !gameActive) {
+                    startGame();
+                    listenGameState(code);
                 }
             });
         }
 
-        function startGame(roomCode, players) {
-            const playerIds = Object.keys(players);
-            const gameState = {
-                [playerIds[0]]: { x: 200, y: 200 },
-                [playerIds[1]]: { x: 600, y: 200 }
-            };
-            set(ref(db, `rooms/${roomCode}/gameState`), gameState);
-            showGameScreen();
-            listenGameState(roomCode);
+        // Слушатель состояния игры
+        function listenGameState(code) {
+            if (gameListener) gameListener();
+            gameListener = onValue(ref(db, `rooms/${code}/gameState`), (snap) => {
+                const state = snap.val();
+                if (!state) return;
+                for (let id in state) {
+                    if (id === currentPlayerId) myPos = state[id];
+                    else enemyPos = state[id];
+                }
+            });
         }
 
-        function showGameScreen() {
+        // Запуск игры
+        function startGame() {
             document.getElementById('lobby').style.display = 'none';
             document.getElementById('game').style.display = 'block';
             gameActive = true;
@@ -227,18 +209,7 @@
             requestAnimationFrame(gameLoop);
         }
 
-        function listenGameState(roomCode) {
-            if (gameStateListener) gameStateListener();
-            gameStateListener = onValue(ref(db, `rooms/${roomCode}/gameState`), (snapshot) => {
-                const state = snapshot.val();
-                if (!state) return;
-                for (let id in state) {
-                    if (id === currentPlayerId) myPos = state[id];
-                    else enemyPos = state[id];
-                }
-            });
-        }
-
+        // Игровой цикл
         function gameLoop() {
             if (!gameActive) return;
             updateGame();
@@ -246,6 +217,7 @@
             requestAnimationFrame(gameLoop);
         }
 
+        // Управление
         let keys = {};
         window.addEventListener('keydown', (e) => {
             keys[e.code] = true;
@@ -254,7 +226,7 @@
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
         function updateGame() {
-            if (!currentRoomCode || !currentPlayerId) return;
+            if (!currentRoomCode || !currentPlayerId || !canvas) return;
             const speed = 3;
             let moved = false;
             if (keys['ArrowUp']) { myPos.y -= speed; moved = true; }
@@ -268,6 +240,7 @@
             }
         }
 
+        // Отрисовка
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = 'red';
@@ -281,11 +254,14 @@
         }
 
         function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            if (canvas) {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
         }
 
-        window.leaveRoom = function(reason = '') {
+        // Выход
+        function leaveRoom() {
             if (currentPlayerId && currentRoomCode) {
                 remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`));
             }
@@ -295,9 +271,8 @@
             document.getElementById('game').style.display = 'none';
             document.getElementById('roomCodeDisplay').textContent = '';
             if (roomListener) roomListener();
-            if (gameStateListener) gameStateListener();
-            if (reason) showError(reason);
-        };
+            if (gameListener) gameListener();
+        }
 
         window.addEventListener('beforeunload', () => {
             if (currentPlayerId && currentRoomCode) {
