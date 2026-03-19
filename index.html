@@ -72,7 +72,7 @@
     </div>
 
     <script type="module">
-        // ----- Импорты Firebase -----
+        // ----- Импорты Firebase (update переименован в firebaseUpdate) -----
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { getDatabase, ref, set, update as firebaseUpdate, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
@@ -102,7 +102,7 @@
 
         // Данные игры (локальные)
         let canvas, ctx;
-        // Простые SVG-изображения танков (зелёный свой, красный враг)
+        // Простые SVG-изображения танков
         let tankImage = new Image();
         tankImage.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><rect x="5" y="15" width="30" height="10" fill="green"/><rect x="15" y="5" width="10" height="20" fill="darkgreen"/><circle cx="20" cy="25" r="8" fill="darkgreen"/><rect x="35" y="17" width="15" height="6" fill="brown"/></svg>';
         let enemyTankImage = new Image();
@@ -323,13 +323,10 @@
                 const state = snapshot.val();
                 if (!state || !state.tanks) return;
                 
-                // Обновляем позиции врага (и свою, если нужно)
+                // Обновляем позиции врага
                 for (let id in state.tanks) {
                     if (id !== currentPlayerId) {
                         enemyTank = state.tanks[id];
-                    } else {
-                        // Можно также обновлять свой танк, если хост меняет его (но мы управляем локально)
-                        // Для простоты оставим как есть.
                     }
                 }
             }, (err) => {
@@ -350,7 +347,7 @@
         window.addEventListener('keydown', (e) => keys[e.code] = true);
         window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-        // Переименовано с update на updateGame, чтобы избежать конфликта с firebaseUpdate
+        // Локальная функция обновления игры (переименована, чтобы не конфликтовать с firebaseUpdate)
         function updateGame() {
             if (!gameActive || !currentRoomCode || !currentPlayerId) return;
 
@@ -372,12 +369,12 @@
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Рисуем препятствия (просто для примера)
+            // Препятствия
             ctx.fillStyle = '#5a3e1a';
             ctx.fillRect(300, 150, 50, 200);
             ctx.fillRect(500, 100, 100, 50);
             
-            // Рисуем вражеский танк
+            // Вражеский танк
             if (enemyTankImage.complete) {
                 ctx.save();
                 ctx.translate(enemyTank.x, enemyTank.y);
@@ -386,7 +383,7 @@
                 ctx.restore();
             }
             
-            // Рисуем свой танк
+            // Свой танк
             if (tankImage.complete) {
                 ctx.save();
                 ctx.translate(myTank.x, myTank.y);
@@ -404,11 +401,9 @@
         // Выход из комнаты
         function leaveRoom(reason = '') {
             if (currentPlayerId && currentRoomCode) {
-                // Удаляем себя из списка игроков
                 remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`))
                     .catch(err => console.warn('Ошибка при удалении игрока:', err));
             }
-            // Возвращаемся в лобби
             currentRoomCode = null;
             gameActive = false;
             document.getElementById('lobby').style.display = 'block';
@@ -418,15 +413,15 @@
             if (reason) showError(reason);
         }
 
-        // При закрытии вкладки
+        // При закрытии вкладки (пытаемся удалить игрока)
         window.addEventListener('beforeunload', () => {
             if (currentPlayerId && currentRoomCode) {
-                // Пытаемся удалить игрока (не гарантировано, но попытаемся)
+                // Используем sendBeacon для надёжности (но не гарантировано)
                 navigator.sendBeacon?.('https://dummy');
             }
         });
 
-        // Явно прикрепляем функции к window, чтобы они были доступны из onclick
+        // Явно делаем функции глобальными
         window.createRoom = createRoom;
         window.joinRoomFromInput = joinRoomFromInput;
         window.leaveRoom = leaveRoom;
