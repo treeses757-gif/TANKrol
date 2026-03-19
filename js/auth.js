@@ -1,7 +1,6 @@
 import { db } from './firebase.js';
 import { ref, get, set } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 
-// Элементы DOM (можно передавать параметрами или импортировать глобально, но проще передать)
 export function initAuth(components) {
     const {
         authScreen,
@@ -12,15 +11,14 @@ export function initAuth(components) {
         showRegisterBtn,
         userNickSpan,
         logoutBtn,
-        onLoginSuccess  // колбэк при успешном входе
+        onLoginSuccess,
+        onLogout
     } = components;
 
-    // Хеш-функция
     function hashPassword(password) {
         return btoa(password);
     }
 
-    // Переключение форм
     showLoginBtn.addEventListener('click', () => {
         showLoginBtn.classList.add('active');
         showRegisterBtn.classList.remove('active');
@@ -35,7 +33,6 @@ export function initAuth(components) {
         loginForm.classList.remove('active');
     });
 
-    // Регистрация
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const nick = document.getElementById('register-username').value.trim();
@@ -71,7 +68,6 @@ export function initAuth(components) {
         }
     });
 
-    // Вход
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const nick = document.getElementById('login-username').value.trim();
@@ -95,7 +91,6 @@ export function initAuth(components) {
                 errorDiv.textContent = 'Неверный пароль';
                 return;
             }
-            // Успешный вход
             localStorage.setItem('playerNick', nick);
             userNickSpan.textContent = nick;
             authScreen.classList.remove('active');
@@ -111,7 +106,6 @@ export function initAuth(components) {
         }
     });
 
-    // Выход
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('playerNick');
         authScreen.classList.add('active');
@@ -119,7 +113,6 @@ export function initAuth(components) {
         gameScreen.classList.remove('active');
         document.getElementById('roomCodeDisplay').textContent = '——';
         document.getElementById('copyBtn').style.display = 'none';
-        // Обнулим глобальные переменные через колбэк
-        if (components.onLogout) components.onLogout();
+        if (onLogout) onLogout();
     });
 }
