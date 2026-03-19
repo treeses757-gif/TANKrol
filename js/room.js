@@ -1,16 +1,12 @@
 import { db } from './firebase.js';
 import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import { startGame, listenGameState, gameActive, setCurrentRoom, loadMap } from './game.js';
 import { getRandomMap } from './maps.js';
+import { isPositionFree } from './utils.js';
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
 let roomListener = null;
-let onGameStartCallback = null;
-
-function getCanvasSize() {
-    const canvas = document.getElementById('gameCanvas');
-    return canvas ? { width: canvas.width, height: canvas.height } : { width: 1200, height: 800 };
-}
 
 export function initRoom(components) {
     const {
@@ -25,10 +21,24 @@ export function initRoom(components) {
         onRoomLeft
     } = components;
 
-    onGameStartCallback = onRoomJoined;
-
     function generateCode() {
         return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    // Поиск свободной позиции с учётом размеров окна
+    function findFreePosition(obstacles, radius = 20, maxAttempts = 2000) {
+        const margin = radius;
+        const maxX = window.innerWidth - margin;
+        const maxY = window.innerHeight - margin;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const x = margin + Math.random() * (maxX - margin);
+            const y = margin + Math.random() * (maxY - margin);
+            if (isPositionFree(x, y, radius, obstacles)) {
+                return { x, y };
+            }
+        }
+        // Запасной вариант
+        return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     }
 
     createBtn.onclick = async () => {
@@ -38,18 +48,14 @@ export function initRoom(components) {
             const roomRef = ref(db, `rooms/${code}`);
             const snap = await get(roomRef);
             if (snap.exists()) {
-                return createBtn.onclick(); // повторить
+                return createBtn.onclick();
             }
+            const map = getRandomMap(code);
             await set(roomRef, {
                 players: { [currentPlayerNick]: true },
-                gameState: null
+                gameState: null,
+                map: map
             });
-
-            // Генерируем карту с учётом размера канваса
-            const canvasSize = getCanvasSize();
-            const map = getRandomMap(code, canvasSize.width, canvasSize.height);
-            await set(ref(db, `rooms/${code}/map`), map);
-
             currentRoomCode = code;
             roomCodeDisplay.textContent = code;
             roomCodeSpan.textContent = code;
@@ -99,23 +105,36 @@ export function initRoom(components) {
     function listenRoom(code) {
         if (roomListener) roomListener();
         const roomRef = ref(db, `rooms/${code}`);
-        roomListener = onValue(roomRef, (snap) => {
+        roomListener = onValue(roomRef, async (snap) => {
             const data = snap.val();
             if (!data) { leaveRoom(); return; }
             const players = data.players || {};
             const count = Object.keys(players).length;
             statusDiv.textContent = `Игроков: ${count}/2`;
+
+            // Инициализация gameState при подключении второго игрока
             if (count === 2 && data.gameState === null) {
                 if (currentPlayerNick === Object.keys(players)[0]) {
+                    const obstacles = data.map || [];
+                    let pos1 = findFreePosition(obstacles);
+                    let pos2 = findFreePosition(obstacles);
+                    while (Math.hypot(pos1.x - pos2.x, pos1.y - pos2.y) < 100) {
+                        pos2 = findFreePosition(obstacles);
+                    }
                     const gameState = {
-                        [Object.keys(players)[0]]: { x: 200, y: 200 },
-                        [Object.keys(players)[1]]: { x: 600, y: 200 }
+                        [Object.keys(players)[0]]: pos1,
+                        [Object.keys(players)[1]]: pos2
                     };
-                    set(ref(db, `rooms/${code}/gameState`), gameState);
+                    await set(ref(db, `rooms/${code}/gameState`), gameState);
                 }
             }
-            if (count === 2 && data.gameState !== null) {
-                if (onGameStartCallback) onGameStartCallback(code);
+
+            // Запуск игры, если оба игрока на месте и состояние игры существует
+            if (count === 2 && data.gameState !== null && !gameActive) {
+                loadMap(code);
+                startGame();
+                listenGameState(code, currentPlayerNick);
+                if (onRoomJoined) onRoomJoined(code);
             }
         });
     }
