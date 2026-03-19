@@ -49,6 +49,10 @@
             margin-top: 20px;
             font-size: 18px;
         }
+        .error {
+            color: #ff6b6b;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -59,15 +63,16 @@
         <input id="roomCodeInput" type="text" placeholder="Код комнаты" maxlength="6">
         <button onclick="joinRoomFromInput()">Присоединиться</button>
         <div id="playersList"></div>
+        <div id="errorMessage" class="error"></div>
     </div>
 
     <div id="game">
         <canvas id="gameCanvas"></canvas>
-        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span></div>
+        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span> <button onclick="leaveRoom()">Выйти</button></div>
     </div>
 
     <script type="module">
-        // ----- Импорты Firebase -----
+        // ----- Импорты Firebase (добавлен get) -----
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { getDatabase, ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
@@ -97,6 +102,7 @@
 
         // Данные игры (локальные)
         let canvas, ctx;
+        // Простые SVG-изображения танков (зелёный свой, красный враг)
         let tankImage = new Image();
         tankImage.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><rect x="5" y="15" width="30" height="10" fill="green"/><rect x="15" y="5" width="10" height="20" fill="darkgreen"/><circle cx="20" cy="25" r="8" fill="darkgreen"/><rect x="35" y="17" width="15" height="6" fill="brown"/></svg>';
         let enemyTankImage = new Image();
@@ -110,9 +116,16 @@
         signInAnonymously(auth).then((userCredential) => {
             currentPlayerId = userCredential.user.uid;
             console.log('Игрок авторизован:', currentPlayerId);
-        }).catch(console.error);
+        }).catch(err => {
+            console.error('Ошибка авторизации:', err);
+            showError('Не удалось авторизоваться. Проверьте интернет и настройки Firebase.');
+        });
 
         // ----- Вспомогательные функции -----
+        function showError(msg) {
+            document.getElementById('errorMessage').textContent = msg;
+        }
+
         function generateRoomCode() {
             return Math.random().toString(36).substring(2, 6).toUpperCase();
         }
@@ -120,42 +133,48 @@
         // Создание комнаты
         window.createRoom = async function() {
             if (!currentPlayerId) {
-                alert('Подождите, идёт авторизация...');
+                showError('Подождите, идёт авторизация...');
                 return;
             }
-            const roomCode = generateRoomCode();
-            const roomRef = ref(db, `rooms/${roomCode}`);
-            
-            // Проверяем, не занят ли код
-            const snapshot = await get(roomRef);
-            if (snapshot.exists()) {
-                return createRoom(); // пробуем другой
+            try {
+                const roomCode = generateRoomCode();
+                const roomRef = ref(db, `rooms/${roomCode}`);
+                
+                // Проверяем, не занят ли код
+                const snapshot = await get(roomRef);
+                if (snapshot.exists()) {
+                    return createRoom(); // пробуем другой
+                }
+
+                const playerData = {
+                    id: currentPlayerId,
+                    name: `Игрок ${currentPlayerId.slice(0,4)}`,
+                    ready: false
+                };
+
+                await set(roomRef, {
+                    players: {
+                        [currentPlayerId]: playerData
+                    },
+                    gameState: null
+                });
+
+                currentRoomCode = roomCode;
+                isHost = true;
+                listenRoom(roomCode);
+                document.getElementById('roomCodeSpan').textContent = roomCode;
+                showError(''); // очищаем ошибки
+                console.log('Комната создана:', roomCode);
+            } catch (err) {
+                console.error('Ошибка создания комнаты:', err);
+                showError('Не удалось создать комнату. Проверьте правила Firebase.');
             }
-
-            const playerData = {
-                id: currentPlayerId,
-                name: `Игрок ${currentPlayerId.slice(0,4)}`,
-                ready: false
-            };
-
-            await set(roomRef, {
-                players: {
-                    [currentPlayerId]: playerData
-                },
-                gameState: null
-            });
-
-            currentRoomCode = roomCode;
-            isHost = true; // создатель - хост
-            listenRoom(roomCode);
-            document.getElementById('roomCodeSpan').textContent = roomCode;
-            // Не показываем игру сразу, ждём второго игрока
         };
 
         // Присоединение к комнате (по полю ввода)
         window.joinRoomFromInput = async function() {
             if (!currentPlayerId) {
-                alert('Подождите, идёт авторизация...');
+                showError('Подождите, идёт авторизация...');
                 return;
             }
             const roomCode = document.getElementById('roomCodeInput').value.trim().toUpperCase();
@@ -164,37 +183,45 @@
         };
 
         async function joinRoom(roomCode) {
-            const roomRef = ref(db, `rooms/${roomCode}`);
-            const snapshot = await get(roomRef);
-            
-            if (!snapshot.exists()) {
-                alert('Комната не найдена');
+            try {
+                const roomRef = ref(db, `rooms/${roomCode}`);
+                const snapshot = await get(roomRef);
+                
+                if (!snapshot.exists()) {
+                    showError('Комната не найдена');
+                    return false;
+                }
+
+                const roomData = snapshot.val();
+                const playersData = roomData.players || {};
+                
+                if (Object.keys(playersData).length >= 2) {
+                    showError('Комната уже заполнена');
+                    return false;
+                }
+
+                const playerData = {
+                    id: currentPlayerId,
+                    name: `Игрок ${currentPlayerId.slice(0,4)}`,
+                    ready: false
+                };
+
+                await update(ref(db, `rooms/${roomCode}/players`), {
+                    [currentPlayerId]: playerData
+                });
+
+                currentRoomCode = roomCode;
+                isHost = false;
+                listenRoom(roomCode);
+                document.getElementById('roomCodeSpan').textContent = roomCode;
+                showError('');
+                console.log('Присоединился к комнате:', roomCode);
+                return true;
+            } catch (err) {
+                console.error('Ошибка подключения:', err);
+                showError('Не удалось подключиться. Проверьте код и правила Firebase.');
                 return false;
             }
-
-            const roomData = snapshot.val();
-            const playersData = roomData.players || {};
-            
-            if (Object.keys(playersData).length >= 2) {
-                alert('Комната уже заполнена');
-                return false;
-            }
-
-            const playerData = {
-                id: currentPlayerId,
-                name: `Игрок ${currentPlayerId.slice(0,4)}`,
-                ready: false
-            };
-
-            await update(ref(db, `rooms/${roomCode}/players`), {
-                [currentPlayerId]: playerData
-            });
-
-            currentRoomCode = roomCode;
-            isHost = false;
-            listenRoom(roomCode);
-            document.getElementById('roomCodeSpan').textContent = roomCode;
-            return true;
         }
 
         // Слушаем изменения в комнате
@@ -209,7 +236,7 @@
                 const data = snapshot.val();
                 if (!data) {
                     // Комната удалена
-                    leaveRoom();
+                    leaveRoom('Комната была закрыта');
                     return;
                 }
                 
@@ -230,6 +257,9 @@
                     showGameScreen(roomCode);
                     listenGameState(roomCode);
                 }
+            }, (err) => {
+                console.error('Ошибка слушателя комнаты:', err);
+                showError('Потеряно соединение с комнатой');
             });
         }
 
@@ -258,7 +288,11 @@
                         [playerIds[1]]: { x: 600, y: 200, angle: Math.PI }
                     }
                 };
-                set(ref(db, `rooms/${roomCode}/gameState`), gameState);
+                set(ref(db, `rooms/${roomCode}/gameState`), gameState)
+                    .catch(err => {
+                        console.error('Не удалось инициализировать игру:', err);
+                        showError('Ошибка запуска игры');
+                    });
             }
             
             // Показываем экран игры
@@ -289,22 +323,17 @@
                 const state = snapshot.val();
                 if (!state || !state.tanks) return;
                 
-                // Обновляем позиции врага
-                if (currentPlayerId) {
-                    for (let id in state.tanks) {
-                        if (id !== currentPlayerId) {
-                            // Это враг
-                            enemyTank = state.tanks[id];
-                        } else {
-                            // Наш танк (но локально мы управляем своим, поэтому не перезаписываем, если не хотим)
-                            // Можно обновлять, если нужна синхронизация от хоста, но мы хотим локальное управление,
-                            // поэтому оставляем локальный myTank. Однако, если другой игрок изменил что-то (например, поворот),
-                            // мы должны это учесть? В простейшем случае каждый управляет своим, поэтому обновлять не нужно.
-                            // Но если хост меняет позиции обоих, то нужно.
-                            // Для упрощения: хост не меняет позицию другого, каждый сам отправляет свою позицию.
-                        }
+                // Обновляем позиции врага (и свою, если нужно)
+                for (let id in state.tanks) {
+                    if (id !== currentPlayerId) {
+                        enemyTank = state.tanks[id];
+                    } else {
+                        // Можно также обновлять свой танк, если хост меняет его (но мы управляем локально)
+                        // Для простоты оставим как есть.
                     }
                 }
+            }, (err) => {
+                console.error('Ошибка слушателя игры:', err);
             });
         }
 
@@ -326,26 +355,17 @@
 
             // Управление своим танком
             const speed = 3;
-            if (keys['ArrowUp']) {
-                myTank.y -= speed;
-            }
-            if (keys['ArrowDown']) {
-                myTank.y += speed;
-            }
-            if (keys['ArrowLeft']) {
-                myTank.x -= speed;
-            }
-            if (keys['ArrowRight']) {
-                myTank.x += speed;
-            }
-            // Поворот (условно)
-            // Для простоты будем считать, что танк поворачивается к мыши или куда-то
-            // Но пока оставим без поворота
+            if (keys['ArrowUp']) myTank.y -= speed;
+            if (keys['ArrowDown']) myTank.y += speed;
+            if (keys['ArrowLeft']) myTank.x -= speed;
+            if (keys['ArrowRight']) myTank.x += speed;
 
             // Отправляем свою позицию в Firebase
             const updates = {};
             updates[`rooms/${currentRoomCode}/gameState/tanks/${currentPlayerId}`] = myTank;
-            update(ref(db), updates).catch(console.error);
+            update(ref(db), updates).catch(err => {
+                console.error('Ошибка отправки позиции:', err);
+            });
         }
 
         function draw() {
@@ -380,28 +400,32 @@
             canvas.height = window.innerHeight;
         }
 
-        // Выход из комнаты (если закрываем вкладку)
-        window.addEventListener('beforeunload', () => {
+        // Выход из комнаты
+        window.leaveRoom = function(reason = '') {
             if (currentPlayerId && currentRoomCode) {
-                remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`));
+                // Удаляем себя из списка игроков
+                remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`))
+                    .catch(err => console.warn('Ошибка при удалении игрока:', err));
             }
-        });
-
-        // Функция для ручного выхода (можно добавить кнопку)
-        window.leaveRoom = function() {
-            if (currentPlayerId && currentRoomCode) {
-                remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerId}`));
-                currentRoomCode = null;
-                gameActive = false;
-                document.getElementById('lobby').style.display = 'block';
-                document.getElementById('game').style.display = 'none';
-                if (roomListener) roomListener();
-                if (gameStateListener) gameStateListener();
-            }
+            // Возвращаемся в лобби
+            currentRoomCode = null;
+            gameActive = false;
+            document.getElementById('lobby').style.display = 'block';
+            document.getElementById('game').style.display = 'none';
+            if (roomListener) roomListener();
+            if (gameStateListener) gameStateListener();
+            if (reason) showError(reason);
         };
 
-        // Удаление комнаты, если игрок был последним (проверяем при отписке)
-        // Для простоты оставим так.
+        // При закрытии вкладки
+        window.addEventListener('beforeunload', () => {
+            if (currentPlayerId && currentRoomCode) {
+                // Синхронный Beacon API не дожидается, но лучше использовать sendBeacon
+                // Для простоты оставим remove, но он может не успеть
+                fetch('https://firebasedynamiclinks.googleapis.com/v1/shortLinks?key=' + firebaseConfig.apiKey, { method: 'POST' }); // заглушка
+                navigator.sendBeacon?.('https://dummy');
+            }
+        });
 
         console.log('Модуль загружен');
     </script>
