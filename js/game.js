@@ -2,7 +2,6 @@ import { db } from './firebase.js';
 import { ref, onValue, update } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { tankBlueImg, tankRedImg } from './textures.js';
 
-// Переменные состояния игры
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
@@ -12,13 +11,15 @@ let currentPlayerNick = null;
 let gameListener = null;
 let keys = {};
 
-// Инициализация игрового модуля
+// Сохраняем ссылки на экраны лобби и игры
+let lobbyScreenEl, gameScreenEl;
+
 export function initGame(components) {
-    const { gameScreen, lobbyScreen } = components;
+    lobbyScreenEl = components.lobbyScreen;
+    gameScreenEl = components.gameScreen;
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
-    // Управление
     window.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
             return;
@@ -41,30 +42,34 @@ function resizeCanvas() {
     }
 }
 
-// Запуск игры
 export function startGame() {
-    lobbyScreen.classList.remove('active');
-    gameScreen.classList.add('active');
+    if (!gameScreenEl || !lobbyScreenEl) {
+        console.error('Game screens not initialized');
+        return;
+    }
+    lobbyScreenEl.classList.remove('active');
+    gameScreenEl.classList.add('active');
     gameActive = true;
     requestAnimationFrame(gameLoop);
 }
 
-// Остановка игры
 export function stopGame() {
     gameActive = false;
-    if (gameListener) gameListener();
-    gameListener = null;
-    lobbyScreen.classList.add('active');
-    gameScreen.classList.remove('active');
+    if (gameListener) {
+        gameListener();
+        gameListener = null;
+    }
+    if (lobbyScreenEl && gameScreenEl) {
+        lobbyScreenEl.classList.add('active');
+        gameScreenEl.classList.remove('active');
+    }
 }
 
-// Установка комнаты и ника
 export function setCurrentRoom(roomCode, playerNick) {
     currentRoomCode = roomCode;
     currentPlayerNick = playerNick;
 }
 
-// Слушатель изменений состояния игры из Firebase
 export function listenGameState(code, playerNick) {
     if (gameListener) gameListener();
     gameListener = onValue(ref(db, `rooms/${code}/gameState`), (snap) => {
@@ -77,7 +82,6 @@ export function listenGameState(code, playerNick) {
     });
 }
 
-// Игровой цикл
 function gameLoop() {
     if (!gameActive) return;
     updateGame();
@@ -103,7 +107,6 @@ function updateGame() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Противник (красный)
     if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
         ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
     } else {
@@ -111,7 +114,6 @@ function draw() {
         ctx.beginPath(); ctx.arc(enemyPos.x, enemyPos.y, 20, 0, 2 * Math.PI); ctx.fill();
     }
     
-    // Игрок (синий)
     if (tankBlueImg.complete && tankBlueImg.naturalHeight !== 0) {
         ctx.drawImage(tankBlueImg, myPos.x - 20, myPos.y - 20, 40, 40);
     } else {
