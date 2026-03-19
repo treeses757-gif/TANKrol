@@ -11,10 +11,32 @@
             min-width: 300px;
         }
         #lobby input, #lobby button { margin: 10px; padding: 10px; font-size: 16px; }
-        #roomCodeDisplay {
-            font-size: 32px; font-weight: bold; color: yellow; margin: 20px 0;
-            background: #333; padding: 10px; border-radius: 5px;
+        .code-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0;
         }
+        #roomCodeDisplay {
+            font-size: 32px;
+            font-weight: bold;
+            color: yellow;
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            min-width: 150px;
+        }
+        #copyBtn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #copyBtn:hover { background: #45a049; }
         #game { display: none; width: 100vw; height: 100vh; background: #2a6f2a; }
         #gameCanvas { width: 100%; height: 100%; }
         #roomInfo { position: absolute; top: 10px; left: 10px; background: black; padding: 5px 10px; border-radius: 5px; }
@@ -27,9 +49,13 @@
         <button id="createBtn">Создать комнату</button><br>
         <input id="roomCodeInput" type="text" inputmode="numeric" pattern="\d*" placeholder="Код (только цифры)" maxlength="6">
         <button id="joinBtn">Присоединиться</button>
-        <div id="roomCodeDisplay">——</div>
+        <div class="code-container">
+            <div id="roomCodeDisplay">——</div>
+            <button id="copyBtn" style="display:none;">📋 Копировать</button>
+        </div>
         <div id="status">Загрузка...</div>
     </div>
+
     <div id="game">
         <canvas id="gameCanvas"></canvas>
         <div id="roomInfo">Комната: <span id="roomCodeSpan"></span></div>
@@ -62,6 +88,9 @@
         let enemyPos = { x: 600, y: 200 };
         let canvas, ctx;
 
+        const copyBtn = document.getElementById('copyBtn');
+        const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+
         signInAnonymously(auth).then(user => {
             currentPlayerId = user.user.uid;
             document.getElementById('status').textContent = 'Готов';
@@ -70,7 +99,6 @@
             document.getElementById('status').textContent = 'Ошибка авторизации';
         });
 
-        // Генерация 6-значного цифрового кода (от 100000 до 999999)
         function generateCode() {
             return Math.floor(100000 + Math.random() * 900000).toString();
         }
@@ -89,8 +117,9 @@
                     gameState: null
                 });
                 currentRoomCode = code;
-                document.getElementById('roomCodeDisplay').textContent = 'Код: ' + code;
+                roomCodeDisplay.textContent = code;
                 document.getElementById('roomCodeSpan').textContent = code;
+                copyBtn.style.display = 'inline-block';
                 listenRoom(code);
             } catch (err) {
                 console.error(err);
@@ -113,14 +142,26 @@
                 if (Object.keys(players).length >= 2) { alert('Комната полна'); return; }
                 await update(ref(db, `rooms/${code}/players`), { [currentPlayerId]: true });
                 currentRoomCode = code;
-                document.getElementById('roomCodeDisplay').textContent = 'Код: ' + code;
+                roomCodeDisplay.textContent = code;
                 document.getElementById('roomCodeSpan').textContent = code;
+                copyBtn.style.display = 'inline-block';
                 listenRoom(code);
             } catch (err) {
                 console.error(err);
                 alert('Ошибка присоединения');
             }
         };
+
+        // Копирование кода в буфер обмена
+        copyBtn.addEventListener('click', () => {
+            if (currentRoomCode) {
+                navigator.clipboard.writeText(currentRoomCode).then(() => {
+                    alert('Код скопирован: ' + currentRoomCode);
+                }).catch(err => {
+                    alert('Не удалось скопировать код');
+                });
+            }
+        });
 
         function listenRoom(code) {
             if (roomListener) roomListener();
@@ -216,7 +257,8 @@
             currentRoomCode = null; gameActive = false;
             document.getElementById('lobby').style.display = 'block';
             document.getElementById('game').style.display = 'none';
-            document.getElementById('roomCodeDisplay').textContent = '——';
+            roomCodeDisplay.textContent = '——';
+            copyBtn.style.display = 'none';
             if (roomListener) roomListener();
             if (gameListener) gameListener();
         }
