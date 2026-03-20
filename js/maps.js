@@ -1,3 +1,4 @@
+// Генерация препятствий в зависимости от размеров экрана
 export function getRandomMap(roomCode, width, height) {
     const seed = parseInt(roomCode) || 123456;
     const mapType = seededRand(seed, 0, 3);
