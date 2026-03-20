@@ -21,6 +21,8 @@ let winner = null;
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
+let lastEnemyPos = { x: 0, y: 0 };   // для вычисления направления врага
+let enemyTurretDir = { x: 0, y: 1 }; // направление пушки врага
 
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 let mobileControlsActive = false;
@@ -138,6 +140,9 @@ export function startGame() {
         mobileControlsActive = true;
     }
 
+    // Сохраняем начальную позицию врага для вычисления направления
+    lastEnemyPos = { ...enemyPos };
+
     requestAnimationFrame(gameLoop);
 }
 
@@ -172,7 +177,11 @@ export function listenGameState(code, playerNick) {
         for (let id in state) {
             if (id === 'bullets' || id === 'restart' || id === 'winner') continue;
             if (id === playerNick) myPos = state[id];
-            else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') enemyPos = state[id];
+            else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') {
+                // Сохраняем предыдущую позицию врага для вычисления направления
+                lastEnemyPos = { ...enemyPos };
+                enemyPos = state[id];
+            }
         }
 
         if (state.bullets) {
@@ -252,6 +261,7 @@ function gameLoop(timestamp) {
     updateGame(deltaTime);
     updateBullets(deltaTime);
     updateCamera();
+    updateEnemyTurret(); // вычисляем направление пушки врага
     draw();
     requestAnimationFrame(gameLoop);
 }
@@ -350,6 +360,18 @@ function updateBullets(deltaTime) {
     }
 }
 
+// Вычисляем направление пушки врага: от его центра к центру игрока
+function updateEnemyTurret() {
+    let dx = myPos.x - enemyPos.x;
+    let dy = myPos.y - enemyPos.y;
+    const len = Math.hypot(dx, dy);
+    if (len > 0.01) {
+        enemyTurretDir = { x: dx / len, y: dy / len };
+    } else {
+        enemyTurretDir = { x: 0, y: 1 };
+    }
+}
+
 function drawTank(x, y, color, direction) {
     const sx = toScreenX(x);
     const sy = toScreenY(y);
@@ -399,24 +421,35 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
-    ctx.fillStyle = '#00f';
+    // --- Пули: улучшенная отрисовка ---
+    const bulletSize = BULLET_RADIUS * scaleX * 1.5; // немного крупнее
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
     myBullets.forEach(b => {
         const sx = toScreenX(b.x);
         const sy = toScreenY(b.y);
+        // Градиент для эффекта свечения
+        const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, bulletSize);
+        grad.addColorStop(0, '#ffaa00');
+        grad.addColorStop(1, '#ff5500');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(sx, sy, BULLET_RADIUS * scaleX, 0, 2 * Math.PI);
+        ctx.arc(sx, sy, bulletSize, 0, 2 * Math.PI);
         ctx.fill();
     });
-
-    ctx.fillStyle = '#f00';
     enemyBullets.forEach(b => {
         const sx = toScreenX(b.x);
         const sy = toScreenY(b.y);
+        const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, bulletSize);
+        grad.addColorStop(0, '#ffaa00');
+        grad.addColorStop(1, '#ff5500');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(sx, sy, BULLET_RADIUS * scaleX, 0, 2 * Math.PI);
+        ctx.arc(sx, sy, bulletSize, 0, 2 * Math.PI);
         ctx.fill();
     });
+    ctx.shadowBlur = 0; // сбросить для остальных объектов
 
-    drawTank(enemyPos.x, enemyPos.y, '#E53935', { x: 0, y: 1 });
+    drawTank(enemyPos.x, enemyPos.y, '#E53935', enemyTurretDir);
     drawTank(myPos.x, myPos.y, '#1E88E5', lastMoveDir);
 }
