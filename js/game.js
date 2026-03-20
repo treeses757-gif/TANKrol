@@ -1,6 +1,5 @@
 import { db } from './firebase.js';
 import { ref, onValue, update, get } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-import { tankBlueImg, tankRedImg } from './textures.js';
 import { isPositionFree, circleRectCollide } from './utils.js';
 
 export let gameActive = false;
@@ -21,7 +20,8 @@ let winner = null;
 const PLAYER_SPEED = 200;
 const BULLET_SPEED = 400;
 const BULLET_RADIUS = 5;
-const PLAYER_RADIUS = 20;
+const TANK_SIZE = 30;          // размер корпуса
+const TANK_HALF = TANK_SIZE / 2;
 
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, restartBtnEl, restartStatusEl;
 
@@ -225,10 +225,10 @@ function updateGame(deltaTime) {
     if (keys['ArrowLeft'] || keys['KeyA']) { newX -= move; lastMoveDir = { x: -1, y: 0 }; }
     if (keys['ArrowRight'] || keys['KeyD']) { newX += move; lastMoveDir = { x: 1, y: 0 }; }
 
-    newX = Math.max(PLAYER_RADIUS, Math.min(canvas.width - PLAYER_RADIUS, newX));
-    newY = Math.max(PLAYER_RADIUS, Math.min(canvas.height - PLAYER_RADIUS, newY));
+    newX = Math.max(TANK_HALF, Math.min(canvas.width - TANK_HALF, newX));
+    newY = Math.max(TANK_HALF, Math.min(canvas.height - TANK_HALF, newY));
 
-    if (isPositionFree(newX, newY, PLAYER_RADIUS, obstacles)) {
+    if (isPositionFree(newX, newY, TANK_HALF, obstacles)) {
         myPos.x = newX;
         myPos.y = newY;
         update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
@@ -258,7 +258,7 @@ function updateBullets(deltaTime) {
 
         const dx = b.x - enemyPos.x;
         const dy = b.y - enemyPos.y;
-        if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
+        if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
             update(ref(db), {
                 [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick
             });
@@ -275,9 +275,9 @@ function updateBullets(deltaTime) {
         if (!winner) {
             const dx = b.x - myPos.x;
             const dy = b.y - myPos.y;
-            if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
+            if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
                 update(ref(db), {
-                    [`rooms/${currentRoomCode}/gameState/winner`]: enemyPos.owner || 'unknown'
+                    [`rooms/${currentRoomCode}/gameState/winner`]: 'enemy'
                 });
                 return;
             }
@@ -289,14 +289,50 @@ function updateBullets(deltaTime) {
     }
 }
 
+// --- Отрисовка танка (простая текстура) ---
+function drawTank(x, y, color, direction) {
+    const w = TANK_SIZE;
+    const h = TANK_SIZE;
+    const left = x - w/2;
+    const top = y - h/2;
+
+    // Корпус
+    ctx.fillStyle = color;
+    ctx.fillRect(left, top, w, h);
+
+    // Гусеницы (чёрные полосы сверху и снизу)
+    ctx.fillStyle = '#333';
+    ctx.fillRect(left, top, w, 5);           // верхняя гусеница
+    ctx.fillRect(left, top + h - 5, w, 5);  // нижняя гусеница
+
+    // Башня (круглая)
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, w * 0.3, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Пушка (линия в направлении движения)
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + direction.x * w * 0.6, y + direction.y * w * 0.6);
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+}
+
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
     });
 
+    // Свои пули (синие)
     ctx.fillStyle = '#00f';
     myBullets.forEach(b => {
         ctx.beginPath();
@@ -304,6 +340,7 @@ function draw() {
         ctx.fill();
     });
 
+    // Вражеские пули (красные)
     ctx.fillStyle = '#f00';
     enemyBullets.forEach(b => {
         ctx.beginPath();
@@ -311,21 +348,11 @@ function draw() {
         ctx.fill();
     });
 
-    if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
-        ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
-    } else {
-        ctx.fillStyle = 'red';
-        ctx.beginPath();
-        ctx.arc(enemyPos.x, enemyPos.y, PLAYER_RADIUS, 0, 2 * Math.PI);
-        ctx.fill();
-    }
+    // Вражеский танк (красный) – используем его направление? У нас нет данных о направлении врага,
+    // поэтому пусть пушка смотрит в нашу сторону для простоты (или вниз). Лучше вниз, так как изначально противник внизу.
+    // Но чтобы было честно, можно хранить направление в gameState. Пока оставим фиксированное вниз.
+    drawTank(enemyPos.x, enemyPos.y, '#E53935', { x: 0, y: 1 });
 
-    if (tankBlueImg.complete && tankBlueImg.naturalHeight !== 0) {
-        ctx.drawImage(tankBlueImg, myPos.x - 20, myPos.y - 20, 40, 40);
-    } else {
-        ctx.fillStyle = 'blue';
-        ctx.beginPath();
-        ctx.arc(myPos.x, myPos.y, PLAYER_RADIUS, 0, 2 * Math.PI);
-        ctx.fill();
-    }
+    // Свой танк (синий) с направлением последнего движения
+    drawTank(myPos.x, myPos.y, '#1E88E5', lastMoveDir);
 }
