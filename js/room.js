@@ -2,8 +2,7 @@ import { db } from './firebase.js';
 import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { startGame, listenGameState, gameActive, loadMap } from './game.js';
 import { getRandomMap } from './maps.js';
-import { isPositionFree } from './utils.js';
-import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, TANK_HALF } from './config.js';
+import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
@@ -24,18 +23,6 @@ export function initRoom(components) {
 
     function generateCode() {
         return Math.floor(100000 + Math.random() * 900000).toString();
-    }
-
-    function findFreePosition(obstacles, maxAttempts = 2000) {
-        const radius = TANK_HALF;
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const x = radius + Math.random() * (VIRTUAL_WIDTH - 2 * radius);
-            const y = radius + Math.random() * (VIRTUAL_HEIGHT - 2 * radius);
-            if (isPositionFree(x, y, radius, obstacles)) {
-                return { x, y };
-            }
-        }
-        return { x: VIRTUAL_WIDTH / 2, y: VIRTUAL_HEIGHT / 2 };
     }
 
     createBtn.onclick = async () => {
@@ -111,16 +98,9 @@ export function initRoom(components) {
 
             if (count === 2 && data.gameState === null) {
                 if (currentPlayerNick === Object.keys(players)[0]) {
-                    const obstacles = data.map || [];
-                    let pos1 = findFreePosition(obstacles);
-                    let pos2 = findFreePosition(obstacles);
-                    // Размещаем игроков в противоположных углах
-                    const centerX = VIRTUAL_WIDTH / 2;
-                    const centerY = VIRTUAL_HEIGHT / 2;
-                    while (Math.hypot(pos1.x - pos2.x, pos1.y - pos2.y) < 400) {
-                        pos1 = { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 };
-                        pos2 = { x: VIRTUAL_WIDTH - 300 + Math.random() * 200, y: VIRTUAL_HEIGHT - 300 + Math.random() * 200 };
-                    }
+                    // Фиксированные позиции в противоположных углах
+                    const pos1 = { x: 100, y: 100 };
+                    const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
                     const gameState = {
                         [Object.keys(players)[0]]: pos1,
                         [Object.keys(players)[1]]: pos2
