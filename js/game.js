@@ -16,16 +16,23 @@ let keys = {};
 let lastMoveDir = { x: 0, y: -1 };
 let obstacles = [];
 let lastTimestamp = 0;
+let winner = null;              // ник победителя, если игра закончена
+
 const PLAYER_SPEED = 200;
 const BULLET_SPEED = 400;
 const BULLET_RADIUS = 5;
 const PLAYER_RADIUS = 20;
 
-let lobbyScreenEl, gameScreenEl;
+let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, restartBtnEl, restartStatusEl;
 
 export function initGame(components) {
     lobbyScreenEl = components.lobbyScreen;
     gameScreenEl = components.gameScreen;
+    gameOverScreenEl = components.gameOverScreen;
+    gameoverMessageEl = components.gameoverMessage;
+    restartBtnEl = components.restartBtn;
+    restartStatusEl = components.restartStatus;
+
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
@@ -44,6 +51,16 @@ export function initGame(components) {
 
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+
+    restartBtnEl.addEventListener('click', () => {
+        if (!currentRoomCode || !currentPlayerNick) return;
+        // Отправляем свою готовность перезапустить игру
+        update(ref(db), {
+            [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true
+        });
+        restartBtnEl.disabled = true;
+        restartStatusEl.textContent = 'Ожидание соперника...';
+    });
 }
 
 function resizeCanvas() {
@@ -60,13 +77,12 @@ function shoot() {
         y: myPos.y,
         vx: lastMoveDir.x * BULLET_SPEED,
         vy: lastMoveDir.y * BULLET_SPEED,
-        owner: currentPlayerNick
+        owner: currentPlayerNick,
+        createdAt: Date.now()
     };
     myBullets.push(bullet);
-    // Отправляем в Firebase с уникальным ключом
-    const bulletKey = `bullet_${Date.now()}_${Math.random()}`;
     update(ref(db), {
-        [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: bullet
+        [`rooms/${currentRoomCode}/gameState/bullets/${bullet.createdAt}`]: bullet
     });
 }
 
@@ -74,23 +90,28 @@ export function startGame() {
     if (!gameScreenEl || !lobbyScreenEl) return;
     lobbyScreenEl.classList.remove('active');
     gameScreenEl.classList.add('active');
+    gameOverScreenEl.classList.remove('active');
     gameActive = true;
     myBullets = [];
     enemyBullets = [];
     lastTimestamp = 0;
+    winner = null;
     requestAnimationFrame(gameLoop);
 }
 
 export function stopGame() {
     gameActive = false;
-    if (gameListener) {
-        gameListener();
-        gameListener = null;
-    }
-    if (lobbyScreenEl && gameScreenEl) {
-        lobbyScreenEl.classList.add('active');
-        gameScreenEl.classList.remove('active');
-    }
+    // Не отключаем слушатель, чтобы получать обновления рестарта
+}
+
+function showGameOver(message, isWinner) {
+    gameActive = false;
+    gameScreenEl.classList.remove('active');
+    gameOverScreenEl.classList.add('active');
+    gameoverMessageEl.textContent = message;
+    restartBtnEl.disabled = false;
+    restartStatusEl.textContent = '';
+    // Если мы проиграли, кнопка всё равно активна для рестарта
 }
 
 export function setCurrentRoom(roomCode, playerNick) {
@@ -103,17 +124,90 @@ export function listenGameState(code, playerNick) {
     gameListener = onValue(ref(db, `rooms/${code}/gameState`), (snap) => {
         const state = snap.val();
         if (!state) return;
+
         // Обновляем позиции игроков
         for (let id in state) {
-            if (id === 'bullets') continue;
+            if (id === 'bullets' || id === 'restart' || id === 'winner') continue;
             if (id === playerNick) myPos = state[id];
-            else if (id !== 'bullets') enemyPos = state[id];
+            else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') enemyPos = state[id];
         }
-        // Обновляем пули противника (все, кроме своих)
+
+        // Обновляем пули противника
         if (state.bullets) {
             enemyBullets = Object.values(state.bullets).filter(b => b.owner !== playerNick);
         }
+
+        // Проверяем, есть ли победитель
+        if (state.winner) {
+            winner = state.winner;
+            if (!gameActive) return; // уже показано
+
+            if (winner === playerNick) {
+                showGameOver('Вы победили!', true);
+            } else {
+                showGameOver('Вы проиграли!', false);
+            }
+        }
+
+        // Проверяем состояние рестарта
+        if (state.restart) {
+            const players = Object.keys(state).filter(k => k !== 'bullets' && k !== 'restart' && k !== 'winner');
+            if (players.length === 2) {
+                const bothReady = state.restart[players[0]] && state.restart[players[1]];
+                if (bothReady) {
+                    // Оба игрока нажали "Заново" – перезапускаем игру
+                    restartGame();
+                }
+            }
+        }
     });
+}
+
+async function restartGame() {
+    if (!currentRoomCode) return;
+
+    // Генерируем новые позиции (используем ту же карту, она не меняется)
+    const roomRef = ref(db, `rooms/${currentRoomCode}`);
+    const snap = await get(roomRef);
+    const data = snap.val();
+    const players = Object.keys(data.players || {});
+    if (players.length !== 2) return;
+
+    const map = data.map || [];
+    const pos1 = findFreePosition(map);
+    const pos2 = findFreePosition(map);
+    while (Math.hypot(pos1.x - pos2.x, pos1.y - pos2.y) < 100) {
+        pos2 = findFreePosition(map);
+    }
+
+    // Новое состояние игры: очищаем пули, winner, restart, ставим новые позиции
+    const newGameState = {
+        [players[0]]: pos1,
+        [players[1]]: pos2,
+        bullets: null,
+        winner: null,
+        restart: { [players[0]]: false, [players[1]]: false }
+    };
+
+    await set(ref(db, `rooms/${currentRoomCode}/gameState`), newGameState);
+
+    // Запускаем игру локально
+    startGame();
+}
+
+// Поиск свободной позиции (скопировано из room.js, но нужно для рестарта)
+function findFreePosition(obstacles, radius = 20, maxAttempts = 2000) {
+    const margin = radius;
+    const maxX = window.innerWidth - margin;
+    const maxY = window.innerHeight - margin;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const x = margin + Math.random() * (maxX - margin);
+        const y = margin + Math.random() * (maxY - margin);
+        if (isPositionFree(x, y, radius, obstacles)) {
+            return { x, y };
+        }
+    }
+    return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 }
 
 export function loadMap(roomCode) {
@@ -157,19 +251,16 @@ function updateGame(deltaTime) {
 }
 
 function updateBullets(deltaTime) {
-    // Двигаем свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
-        // Границы
         if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
             myBullets.splice(i, 1);
             continue;
         }
 
-        // Столкновение с препятствиями
         let hit = false;
         for (let obs of obstacles) {
             if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
@@ -180,31 +271,35 @@ function updateBullets(deltaTime) {
         }
         if (hit) continue;
 
-        // Попадание во врага
         const dx = b.x - enemyPos.x;
         const dy = b.y - enemyPos.y;
         if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
-            alert('Вы победили!');
-            stopGame();
+            // Попадание! Записываем победителя в Firebase
+            update(ref(db), {
+                [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick
+            });
+            myBullets.splice(i, 1);
             return;
         }
     }
 
-    // Двигаем вражеские пули и проверяем попадание в нас
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
-        const dx = b.x - myPos.x;
-        const dy = b.y - myPos.y;
-        if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
-            alert('Вы проиграли!');
-            stopGame();
-            return;
+        // Проверка на попадание в нас (но если уже есть победитель, не обрабатываем)
+        if (!winner) {
+            const dx = b.x - myPos.x;
+            const dy = b.y - myPos.y;
+            if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
+                update(ref(db), {
+                    [`rooms/${currentRoomCode}/gameState/winner`]: enemyPos.owner || 'unknown'
+                });
+                return;
+            }
         }
 
-        // Удаляем, если улетели за экран
         if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
             enemyBullets.splice(i, 1);
         }
@@ -220,7 +315,7 @@ function draw() {
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
     });
 
-    // Свои пули (синие)
+    // Свои пули
     ctx.fillStyle = '#00f';
     myBullets.forEach(b => {
         ctx.beginPath();
@@ -228,7 +323,7 @@ function draw() {
         ctx.fill();
     });
 
-    // Вражеские пули (красные)
+    // Вражеские пули
     ctx.fillStyle = '#f00';
     enemyBullets.forEach(b => {
         ctx.beginPath();
@@ -236,7 +331,7 @@ function draw() {
         ctx.fill();
     });
 
-    // Вражеский танк
+    // Танки (текстуры, если загружены, иначе круги)
     if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
         ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
     } else {
@@ -246,7 +341,6 @@ function draw() {
         ctx.fill();
     }
 
-    // Свой танк
     if (tankBlueImg.complete && tankBlueImg.naturalHeight !== 0) {
         ctx.drawImage(tankBlueImg, myPos.x - 20, myPos.y - 20, 40, 40);
     } else {
