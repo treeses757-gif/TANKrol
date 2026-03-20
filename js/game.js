@@ -2,33 +2,51 @@ import { db } from './firebase.js';
 import { ref, onValue, update, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { isPositionFree, circleRectCollide } from './utils.js';
 import { initMobileControls, getJoystickDirection, removeMobileControls } from './mobile-controls.js';
-import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_SIZE, TANK_HALF, BULLET_RADIUS } from './config.js';
+import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_SIZE, TANK_HALF, BULLET_RADIUS } from './config.js';
 
 export let gameActive = false;
-let myPos = { x: 200, y: 200 };          // виртуальные координаты
-let enemyPos = { x: 600, y: 200 };        // виртуальные координаты
-let myBullets = [];                        // массив пуль (каждая с виртуальными координатами и ключом)
-let enemyBullets = [];                      // массив пуль противника
+let myPos = { x: 200, y: 200 };
+let enemyPos = { x: 600, y: 200 };
+let myBullets = [];
+let enemyBullets = [];
 let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
 let gameListener = null;
 let keys = {};
 let lastMoveDir = { x: 0, y: -1 };
-let obstacles = [];                         // препятствия в виртуальных координатах
+let obstacles = [];
 let lastTimestamp = 0;
 let winner = null;
+
+let cameraX = 0, cameraY = 0;
+let useCamera = false;
 
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 let mobileControlsActive = false;
 
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, restartBtnEl, restartStatusEl;
 
-// Для преобразования координат
-function toScreenX(vx) { return (vx / VIRTUAL_WIDTH) * canvas.width; }
-function toScreenY(vy) { return (vy / VIRTUAL_HEIGHT) * canvas.height; }
-function toVirtualX(sx) { return (sx / canvas.width) * VIRTUAL_WIDTH; }
-function toVirtualY(sy) { return (sy / canvas.height) * VIRTUAL_HEIGHT; }
+function toScreenX(vx) {
+    if (useCamera) {
+        return ((vx - cameraX) / VIEWPORT_WIDTH) * canvas.width;
+    } else {
+        return (vx / VIRTUAL_WIDTH) * canvas.width;
+    }
+}
+function toScreenY(vy) {
+    if (useCamera) {
+        return ((vy - cameraY) / VIEWPORT_HEIGHT) * canvas.height;
+    } else {
+        return (vy / VIRTUAL_HEIGHT) * canvas.height;
+    }
+}
+function getScaleX() {
+    return useCamera ? canvas.width / VIEWPORT_WIDTH : canvas.width / VIRTUAL_WIDTH;
+}
+function getScaleY() {
+    return useCamera ? canvas.height / VIEWPORT_HEIGHT : canvas.height / VIRTUAL_HEIGHT;
+}
 
 export function initGame(components) {
     lobbyScreenEl = components.lobbyScreen;
@@ -40,6 +58,8 @@ export function initGame(components) {
 
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
+
+    useCamera = !isMobile;
 
     canvas.addEventListener('touchstart', (e) => e.preventDefault());
     canvas.addEventListener('touchmove', (e) => e.preventDefault());
@@ -99,7 +119,6 @@ function shoot() {
 export function startGame() {
     if (!gameScreenEl || !lobbyScreenEl) return;
 
-    // Проверка ориентации на мобильных
     if (isMobile && window.innerWidth < window.innerHeight) {
         alert('Пожалуйста, поверните устройство горизонтально');
         return;
@@ -190,9 +209,6 @@ async function restartGame() {
     const players = Object.keys(data.players || {});
     if (players.length !== 2) return;
 
-    const map = data.map || [];
-    // Используем функцию поиска свободной позиции из room.js (или копируем сюда)
-    // Для простоты разместим игроков в противоположных углах
     const pos1 = { x: 100, y: 100 };
     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
 
@@ -215,6 +231,18 @@ export function loadMap(roomCode) {
     }, { onlyOnce: true });
 }
 
+function updateCamera() {
+    if (!useCamera) {
+        cameraX = 0;
+        cameraY = 0;
+        return;
+    }
+    cameraX = myPos.x - VIEWPORT_WIDTH / 2;
+    cameraY = myPos.y - VIEWPORT_HEIGHT / 2;
+    cameraX = Math.max(0, Math.min(VIRTUAL_WIDTH - VIEWPORT_WIDTH, cameraX));
+    cameraY = Math.max(0, Math.min(VIRTUAL_HEIGHT - VIEWPORT_HEIGHT, cameraY));
+}
+
 function gameLoop(timestamp) {
     if (!gameActive) return;
     if (lastTimestamp === 0) lastTimestamp = timestamp;
@@ -223,6 +251,7 @@ function gameLoop(timestamp) {
 
     updateGame(deltaTime);
     updateBullets(deltaTime);
+    updateCamera();
     draw();
     requestAnimationFrame(gameLoop);
 }
@@ -259,14 +288,12 @@ function updateGame(deltaTime) {
 }
 
 function updateBullets(deltaTime) {
-    // Свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
-            // Удаляем из Firebase и из массива
             if (currentRoomCode && b.key) {
                 remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
             }
@@ -301,7 +328,6 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Вражеские пули (только проверка попадания в нас)
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         b.x += b.vx * deltaTime;
@@ -318,7 +344,6 @@ function updateBullets(deltaTime) {
             }
         }
 
-        // Удаляем вражеские пули, вышедшие за границы (они должны удаляться на стороне владельца, но для чистоты)
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             enemyBullets.splice(i, 1);
         }
@@ -328,10 +353,10 @@ function updateBullets(deltaTime) {
 function drawTank(x, y, color, direction) {
     const sx = toScreenX(x);
     const sy = toScreenY(y);
-    const size = TANK_SIZE * (canvas.width / VIRTUAL_WIDTH); // адаптивный размер
-
-    const w = size;
-    const h = size;
+    const scaleX = getScaleX();
+    const scaleY = getScaleY();
+    const w = TANK_SIZE * scaleX;
+    const h = TANK_SIZE * scaleY;
     const left = sx - w/2;
     const top = sy - h/2;
 
@@ -339,55 +364,56 @@ function drawTank(x, y, color, direction) {
     ctx.fillRect(left, top, w, h);
 
     ctx.fillStyle = '#333';
-    ctx.fillRect(left, top, w, 5 * (canvas.width / VIRTUAL_WIDTH));
-    ctx.fillRect(left, top + h - 5 * (canvas.width / VIRTUAL_WIDTH), w, 5 * (canvas.width / VIRTUAL_WIDTH));
+    const trackHeight = 5 * scaleY;
+    ctx.fillRect(left, top, w, trackHeight);
+    ctx.fillRect(left, top + h - trackHeight, w, trackHeight);
 
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(sx, sy, w * 0.3, 0, 2 * Math.PI);
     ctx.fill();
     ctx.strokeStyle = '#222';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 * scaleX;
     ctx.stroke();
 
     ctx.beginPath();
     ctx.moveTo(sx, sy);
     ctx.lineTo(sx + direction.x * w * 0.6, sy + direction.y * w * 0.6);
     ctx.strokeStyle = '#222';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 4 * scaleX;
     ctx.stroke();
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Препятствия
+    const scaleX = getScaleX();
+    const scaleY = getScaleY();
+
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         const sx = toScreenX(obs.x);
         const sy = toScreenY(obs.y);
-        const sw = obs.width * (canvas.width / VIRTUAL_WIDTH);
-        const sh = obs.height * (canvas.height / VIRTUAL_HEIGHT);
+        const sw = obs.width * scaleX;
+        const sh = obs.height * scaleY;
         ctx.fillRect(sx, sy, sw, sh);
     });
 
-    // Свои пули
     ctx.fillStyle = '#00f';
     myBullets.forEach(b => {
         const sx = toScreenX(b.x);
         const sy = toScreenY(b.y);
         ctx.beginPath();
-        ctx.arc(sx, sy, BULLET_RADIUS * (canvas.width / VIRTUAL_WIDTH), 0, 2 * Math.PI);
+        ctx.arc(sx, sy, BULLET_RADIUS * scaleX, 0, 2 * Math.PI);
         ctx.fill();
     });
 
-    // Вражеские пули
     ctx.fillStyle = '#f00';
     enemyBullets.forEach(b => {
         const sx = toScreenX(b.x);
         const sy = toScreenY(b.y);
         ctx.beginPath();
-        ctx.arc(sx, sy, BULLET_RADIUS * (canvas.width / VIRTUAL_WIDTH), 0, 2 * Math.PI);
+        ctx.arc(sx, sy, BULLET_RADIUS * scaleX, 0, 2 * Math.PI);
         ctx.fill();
     });
 
