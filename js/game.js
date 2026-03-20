@@ -20,7 +20,7 @@ let winner = null;
 const PLAYER_SPEED = 200;
 const BULLET_SPEED = 400;
 const BULLET_RADIUS = 5;
-const TANK_SIZE = 30;          // размер корпуса
+const TANK_SIZE = 30;
 const TANK_HALF = TANK_SIZE / 2;
 
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, restartBtnEl, restartStatusEl;
@@ -52,14 +52,18 @@ export function initGame(components) {
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    restartBtnEl.addEventListener('click', () => {
-        if (!currentRoomCode || !currentPlayerNick) return;
-        update(ref(db), {
-            [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true
+    if (restartBtnEl) {
+        restartBtnEl.addEventListener('click', () => {
+            if (!currentRoomCode || !currentPlayerNick) return;
+            update(ref(db), {
+                [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true
+            });
+            restartBtnEl.disabled = true;
+            restartStatusEl.textContent = 'Ожидание соперника...';
         });
-        restartBtnEl.disabled = true;
-        restartStatusEl.textContent = 'Ожидание соперника...';
-    });
+    } else {
+        console.error('restartBtn не найден! Проверьте index.html');
+    }
 }
 
 function resizeCanvas() {
@@ -107,8 +111,8 @@ function showGameOver(message, isWinner) {
     gameScreenEl.classList.remove('active');
     gameOverScreenEl.classList.add('active');
     gameoverMessageEl.textContent = message;
-    restartBtnEl.disabled = false;
-    restartStatusEl.textContent = '';
+    if (restartBtnEl) restartBtnEl.disabled = false;
+    if (restartStatusEl) restartStatusEl.textContent = '';
 }
 
 export function setCurrentRoom(roomCode, playerNick) {
@@ -348,11 +352,12 @@ function draw() {
         ctx.fill();
     });
 
-    // Вражеский танк (красный) – используем его направление? У нас нет данных о направлении врага,
-    // поэтому пусть пушка смотрит в нашу сторону для простоты (или вниз). Лучше вниз, так как изначально противник внизу.
-    // Но чтобы было честно, можно хранить направление в gameState. Пока оставим фиксированное вниз.
+    // Вражеский танк (красный) – направим пушку вниз
     drawTank(enemyPos.x, enemyPos.y, '#E53935', { x: 0, y: 1 });
 
     // Свой танк (синий) с направлением последнего движения
     drawTank(myPos.x, myPos.y, '#1E88E5', lastMoveDir);
+
+    // Отладка: выведем в консоль координаты один раз
+    if (Math.random() < 0.01) console.log('Рисую танки:', myPos, enemyPos);
 }
