@@ -2,11 +2,14 @@
 export const VIRTUAL_WIDTH = 1200;
 export const VIRTUAL_HEIGHT = 800;
 
-// Скорости в виртуальных единицах в секунду
+// Размер области, видимой на экране ПК (в виртуальных пикселях)
+export const VIEWPORT_WIDTH = 800;
+export const VIEWPORT_HEIGHT = 600;
+
+// Скорости
 export const PLAYER_SPEED = 200;
 export const BULLET_SPEED = 400;
 
-// Размер танка в виртуальных единицах
 export const TANK_SIZE = 30;
 export const TANK_HALF = TANK_SIZE / 2;
 export const BULLET_RADIUS = 5;
