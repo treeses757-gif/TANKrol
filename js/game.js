@@ -1,35 +1,34 @@
 import { db } from './firebase.js';
-import { ref, onValue, update, get } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import { ref, onValue, update, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { isPositionFree, circleRectCollide } from './utils.js';
-// +++ Импорт мобильного управления +++
 import { initMobileControls, getJoystickDirection, removeMobileControls } from './mobile-controls.js';
+import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_SIZE, TANK_HALF, BULLET_RADIUS } from './config.js';
 
 export let gameActive = false;
-let myPos = { x: 200, y: 200 };
-let enemyPos = { x: 600, y: 200 };
-let myBullets = [];
-let enemyBullets = [];
+let myPos = { x: 200, y: 200 };          // виртуальные координаты
+let enemyPos = { x: 600, y: 200 };        // виртуальные координаты
+let myBullets = [];                        // массив пуль (каждая с виртуальными координатами и ключом)
+let enemyBullets = [];                      // массив пуль противника
 let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
 let gameListener = null;
 let keys = {};
 let lastMoveDir = { x: 0, y: -1 };
-let obstacles = [];
+let obstacles = [];                         // препятствия в виртуальных координатах
 let lastTimestamp = 0;
 let winner = null;
 
-// +++ Определяем, мобильное ли устройство +++
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-let mobileControlsActive = false; // флаг, что контроллеры созданы
-
-const PLAYER_SPEED = 200;
-const BULLET_SPEED = 400;
-const BULLET_RADIUS = 5;
-const TANK_SIZE = 30;
-const TANK_HALF = TANK_SIZE / 2;
+let mobileControlsActive = false;
 
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, restartBtnEl, restartStatusEl;
+
+// Для преобразования координат
+function toScreenX(vx) { return (vx / VIRTUAL_WIDTH) * canvas.width; }
+function toScreenY(vy) { return (vy / VIRTUAL_HEIGHT) * canvas.height; }
+function toVirtualX(sx) { return (sx / canvas.width) * VIRTUAL_WIDTH; }
+function toVirtualY(sy) { return (sy / canvas.height) * VIRTUAL_HEIGHT; }
 
 export function initGame(components) {
     lobbyScreenEl = components.lobbyScreen;
@@ -42,7 +41,6 @@ export function initGame(components) {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
-    // +++ Запрещаем скролл при касании canvas на мобильных +++
     canvas.addEventListener('touchstart', (e) => e.preventDefault());
     canvas.addEventListener('touchmove', (e) => e.preventDefault());
 
@@ -71,8 +69,6 @@ export function initGame(components) {
             restartBtnEl.disabled = true;
             restartStatusEl.textContent = 'Ожидание соперника...';
         });
-    } else {
-        console.error('restartBtn не найден! Проверьте index.html');
     }
 }
 
@@ -85,22 +81,30 @@ function resizeCanvas() {
 
 function shoot() {
     if (!gameActive || !currentRoomCode) return;
+    const bulletKey = Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     const bullet = {
         x: myPos.x,
         y: myPos.y,
         vx: lastMoveDir.x * BULLET_SPEED,
         vy: lastMoveDir.y * BULLET_SPEED,
         owner: currentPlayerNick,
-        createdAt: Date.now()
+        key: bulletKey
     };
     myBullets.push(bullet);
     update(ref(db), {
-        [`rooms/${currentRoomCode}/gameState/bullets/${bullet.createdAt}`]: bullet
+        [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: bullet
     });
 }
 
 export function startGame() {
     if (!gameScreenEl || !lobbyScreenEl) return;
+
+    // Проверка ориентации на мобильных
+    if (isMobile && window.innerWidth < window.innerHeight) {
+        alert('Пожалуйста, поверните устройство горизонтально');
+        return;
+    }
+
     lobbyScreenEl.classList.remove('active');
     gameScreenEl.classList.add('active');
     gameOverScreenEl.classList.remove('active');
@@ -110,7 +114,6 @@ export function startGame() {
     lastTimestamp = 0;
     winner = null;
 
-    // +++ Создаём мобильные контроллеры, если нужно и их ещё нет +++
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
         mobileControlsActive = true;
@@ -121,7 +124,6 @@ export function startGame() {
 
 export function stopGame() {
     gameActive = false;
-    // +++ Удаляем мобильные контроллеры при выходе из игры +++
     if (isMobile && mobileControlsActive) {
         removeMobileControls();
         mobileControlsActive = false;
@@ -189,11 +191,10 @@ async function restartGame() {
     if (players.length !== 2) return;
 
     const map = data.map || [];
-    const pos1 = findFreePosition(map);
-    const pos2 = findFreePosition(map);
-    while (Math.hypot(pos1.x - pos2.x, pos1.y - pos2.y) < 100) {
-        pos2 = findFreePosition(map);
-    }
+    // Используем функцию поиска свободной позиции из room.js (или копируем сюда)
+    // Для простоты разместим игроков в противоположных углах
+    const pos1 = { x: 100, y: 100 };
+    const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
 
     const newGameState = {
         [players[0]]: pos1,
@@ -205,20 +206,6 @@ async function restartGame() {
 
     await set(ref(db, `rooms/${currentRoomCode}/gameState`), newGameState);
     startGame();
-}
-
-function findFreePosition(obstacles, radius = 20, maxAttempts = 2000) {
-    const margin = radius;
-    const maxX = window.innerWidth - margin;
-    const maxY = window.innerHeight - margin;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const x = margin + Math.random() * (maxX - margin);
-        const y = margin + Math.random() * (maxY - margin);
-        if (isPositionFree(x, y, radius, obstacles)) {
-            return { x, y };
-        }
-    }
-    return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 }
 
 export function loadMap(roomCode) {
@@ -246,17 +233,14 @@ function updateGame(deltaTime) {
     let newX = myPos.x;
     let newY = myPos.y;
 
-    // +++ Управление с клавиатуры +++
     if (keys['ArrowUp'] || keys['KeyW']) { newY -= move; lastMoveDir = { x: 0, y: -1 }; }
     if (keys['ArrowDown'] || keys['KeyS']) { newY += move; lastMoveDir = { x: 0, y: 1 }; }
     if (keys['ArrowLeft'] || keys['KeyA']) { newX -= move; lastMoveDir = { x: -1, y: 0 }; }
     if (keys['ArrowRight'] || keys['KeyD']) { newX += move; lastMoveDir = { x: 1, y: 0 }; }
 
-    // +++ Управление с джойстика (если активно) +++
     if (isMobile && mobileControlsActive) {
         const jDir = getJoystickDirection();
         if (jDir.x !== 0 || jDir.y !== 0) {
-            // Обновляем направление для выстрела
             lastMoveDir.x = jDir.x;
             lastMoveDir.y = jDir.y;
             newX += jDir.x * move;
@@ -264,8 +248,8 @@ function updateGame(deltaTime) {
         }
     }
 
-    newX = Math.max(TANK_HALF, Math.min(canvas.width - TANK_HALF, newX));
-    newY = Math.max(TANK_HALF, Math.min(canvas.height - TANK_HALF, newY));
+    newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
+    newY = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY));
 
     if (isPositionFree(newX, newY, TANK_HALF, obstacles)) {
         myPos.x = newX;
@@ -275,12 +259,17 @@ function updateGame(deltaTime) {
 }
 
 function updateBullets(deltaTime) {
+    // Свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
-        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+        if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
+            // Удаляем из Firebase и из массива
+            if (currentRoomCode && b.key) {
+                remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
+            }
             myBullets.splice(i, 1);
             continue;
         }
@@ -288,6 +277,9 @@ function updateBullets(deltaTime) {
         let hit = false;
         for (let obs of obstacles) {
             if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
+                if (currentRoomCode && b.key) {
+                    remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
+                }
                 myBullets.splice(i, 1);
                 hit = true;
                 break;
@@ -298,14 +290,18 @@ function updateBullets(deltaTime) {
         const dx = b.x - enemyPos.x;
         const dy = b.y - enemyPos.y;
         if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
+            if (currentRoomCode && b.key) {
+                remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
+            }
+            myBullets.splice(i, 1);
             update(ref(db), {
                 [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick
             });
-            myBullets.splice(i, 1);
             return;
         }
     }
 
+    // Вражеские пули (только проверка попадания в нас)
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         b.x += b.vx * deltaTime;
@@ -322,37 +318,41 @@ function updateBullets(deltaTime) {
             }
         }
 
-        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+        // Удаляем вражеские пули, вышедшие за границы (они должны удаляться на стороне владельца, но для чистоты)
+        if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             enemyBullets.splice(i, 1);
         }
     }
 }
 
-// --- Отрисовка танка (простая текстура) ---
 function drawTank(x, y, color, direction) {
-    const w = TANK_SIZE;
-    const h = TANK_SIZE;
-    const left = x - w/2;
-    const top = y - h/2;
+    const sx = toScreenX(x);
+    const sy = toScreenY(y);
+    const size = TANK_SIZE * (canvas.width / VIRTUAL_WIDTH); // адаптивный размер
+
+    const w = size;
+    const h = size;
+    const left = sx - w/2;
+    const top = sy - h/2;
 
     ctx.fillStyle = color;
     ctx.fillRect(left, top, w, h);
 
     ctx.fillStyle = '#333';
-    ctx.fillRect(left, top, w, 5);
-    ctx.fillRect(left, top + h - 5, w, 5);
+    ctx.fillRect(left, top, w, 5 * (canvas.width / VIRTUAL_WIDTH));
+    ctx.fillRect(left, top + h - 5 * (canvas.width / VIRTUAL_WIDTH), w, 5 * (canvas.width / VIRTUAL_WIDTH));
 
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(x, y, w * 0.3, 0, 2 * Math.PI);
+    ctx.arc(sx, sy, w * 0.3, 0, 2 * Math.PI);
     ctx.fill();
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 2;
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + direction.x * w * 0.6, y + direction.y * w * 0.6);
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + direction.x * w * 0.6, sy + direction.y * w * 0.6);
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 4;
     ctx.stroke();
@@ -361,22 +361,33 @@ function drawTank(x, y, color, direction) {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+        const sx = toScreenX(obs.x);
+        const sy = toScreenY(obs.y);
+        const sw = obs.width * (canvas.width / VIRTUAL_WIDTH);
+        const sh = obs.height * (canvas.height / VIRTUAL_HEIGHT);
+        ctx.fillRect(sx, sy, sw, sh);
     });
 
+    // Свои пули
     ctx.fillStyle = '#00f';
     myBullets.forEach(b => {
+        const sx = toScreenX(b.x);
+        const sy = toScreenY(b.y);
         ctx.beginPath();
-        ctx.arc(b.x, b.y, BULLET_RADIUS, 0, 2 * Math.PI);
+        ctx.arc(sx, sy, BULLET_RADIUS * (canvas.width / VIRTUAL_WIDTH), 0, 2 * Math.PI);
         ctx.fill();
     });
 
+    // Вражеские пули
     ctx.fillStyle = '#f00';
     enemyBullets.forEach(b => {
+        const sx = toScreenX(b.x);
+        const sy = toScreenY(b.y);
         ctx.beginPath();
-        ctx.arc(b.x, b.y, BULLET_RADIUS, 0, 2 * Math.PI);
+        ctx.arc(sx, sy, BULLET_RADIUS * (canvas.width / VIRTUAL_WIDTH), 0, 2 * Math.PI);
         ctx.fill();
     });
 
