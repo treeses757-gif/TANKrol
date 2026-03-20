@@ -1,5 +1,5 @@
 import { db } from './firebase.js';
-import { ref, onValue, update } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import { ref, onValue, update, get } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { tankBlueImg, tankRedImg } from './textures.js';
 import { isPositionFree, circleRectCollide } from './utils.js';
 
@@ -16,7 +16,7 @@ let keys = {};
 let lastMoveDir = { x: 0, y: -1 };
 let obstacles = [];
 let lastTimestamp = 0;
-let winner = null;              // ник победителя, если игра закончена
+let winner = null;
 
 const PLAYER_SPEED = 200;
 const BULLET_SPEED = 400;
@@ -54,7 +54,6 @@ export function initGame(components) {
 
     restartBtnEl.addEventListener('click', () => {
         if (!currentRoomCode || !currentPlayerNick) return;
-        // Отправляем свою готовность перезапустить игру
         update(ref(db), {
             [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true
         });
@@ -101,7 +100,6 @@ export function startGame() {
 
 export function stopGame() {
     gameActive = false;
-    // Не отключаем слушатель, чтобы получать обновления рестарта
 }
 
 function showGameOver(message, isWinner) {
@@ -111,7 +109,6 @@ function showGameOver(message, isWinner) {
     gameoverMessageEl.textContent = message;
     restartBtnEl.disabled = false;
     restartStatusEl.textContent = '';
-    // Если мы проиграли, кнопка всё равно активна для рестарта
 }
 
 export function setCurrentRoom(roomCode, playerNick) {
@@ -125,23 +122,19 @@ export function listenGameState(code, playerNick) {
         const state = snap.val();
         if (!state) return;
 
-        // Обновляем позиции игроков
         for (let id in state) {
             if (id === 'bullets' || id === 'restart' || id === 'winner') continue;
             if (id === playerNick) myPos = state[id];
             else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') enemyPos = state[id];
         }
 
-        // Обновляем пули противника
         if (state.bullets) {
             enemyBullets = Object.values(state.bullets).filter(b => b.owner !== playerNick);
         }
 
-        // Проверяем, есть ли победитель
         if (state.winner) {
             winner = state.winner;
-            if (!gameActive) return; // уже показано
-
+            if (!gameActive) return;
             if (winner === playerNick) {
                 showGameOver('Вы победили!', true);
             } else {
@@ -149,13 +142,11 @@ export function listenGameState(code, playerNick) {
             }
         }
 
-        // Проверяем состояние рестарта
         if (state.restart) {
             const players = Object.keys(state).filter(k => k !== 'bullets' && k !== 'restart' && k !== 'winner');
             if (players.length === 2) {
                 const bothReady = state.restart[players[0]] && state.restart[players[1]];
                 if (bothReady) {
-                    // Оба игрока нажали "Заново" – перезапускаем игру
                     restartGame();
                 }
             }
@@ -165,8 +156,6 @@ export function listenGameState(code, playerNick) {
 
 async function restartGame() {
     if (!currentRoomCode) return;
-
-    // Генерируем новые позиции (используем ту же карту, она не меняется)
     const roomRef = ref(db, `rooms/${currentRoomCode}`);
     const snap = await get(roomRef);
     const data = snap.val();
@@ -180,7 +169,6 @@ async function restartGame() {
         pos2 = findFreePosition(map);
     }
 
-    // Новое состояние игры: очищаем пули, winner, restart, ставим новые позиции
     const newGameState = {
         [players[0]]: pos1,
         [players[1]]: pos2,
@@ -190,12 +178,9 @@ async function restartGame() {
     };
 
     await set(ref(db, `rooms/${currentRoomCode}/gameState`), newGameState);
-
-    // Запускаем игру локально
     startGame();
 }
 
-// Поиск свободной позиции (скопировано из room.js, но нужно для рестарта)
 function findFreePosition(obstacles, radius = 20, maxAttempts = 2000) {
     const margin = radius;
     const maxX = window.innerWidth - margin;
@@ -274,7 +259,6 @@ function updateBullets(deltaTime) {
         const dx = b.x - enemyPos.x;
         const dy = b.y - enemyPos.y;
         if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
-            // Попадание! Записываем победителя в Firebase
             update(ref(db), {
                 [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick
             });
@@ -288,7 +272,6 @@ function updateBullets(deltaTime) {
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
-        // Проверка на попадание в нас (но если уже есть победитель, не обрабатываем)
         if (!winner) {
             const dx = b.x - myPos.x;
             const dy = b.y - myPos.y;
@@ -309,13 +292,11 @@ function updateBullets(deltaTime) {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
     });
 
-    // Свои пули
     ctx.fillStyle = '#00f';
     myBullets.forEach(b => {
         ctx.beginPath();
@@ -323,7 +304,6 @@ function draw() {
         ctx.fill();
     });
 
-    // Вражеские пули
     ctx.fillStyle = '#f00';
     enemyBullets.forEach(b => {
         ctx.beginPath();
@@ -331,7 +311,6 @@ function draw() {
         ctx.fill();
     });
 
-    // Танки (текстуры, если загружены, иначе круги)
     if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
         ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
     } else {
