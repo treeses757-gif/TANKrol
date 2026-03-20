@@ -18,11 +18,13 @@ let lastMoveDir = { x: 0, y: -1 };
 let obstacles = [];
 let lastTimestamp = 0;
 let winner = null;
+let lastShootTime = 0;
+const SHOOT_DELAY = 500; // миллисекунд
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
-let lastEnemyPos = { x: 0, y: 0 };   // для вычисления направления врага
-let enemyTurretDir = { x: 0, y: 1 }; // направление пушки врага
+let lastEnemyPos = { x: 0, y: 0 };
+let enemyTurretDir = { x: 0, y: 1 };
 
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 let mobileControlsActive = false;
@@ -85,6 +87,7 @@ export function initGame(components) {
     if (restartBtnEl) {
         restartBtnEl.addEventListener('click', () => {
             if (!currentRoomCode || !currentPlayerNick) return;
+            // Отправляем свою готовность к рестарту
             update(ref(db), {
                 [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true
             });
@@ -103,6 +106,10 @@ function resizeCanvas() {
 
 function shoot() {
     if (!gameActive || !currentRoomCode) return;
+    const now = Date.now();
+    if (now - lastShootTime < SHOOT_DELAY) return;
+    lastShootTime = now;
+
     const bulletKey = Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     const bullet = {
         x: myPos.x,
@@ -134,13 +141,13 @@ export function startGame() {
     enemyBullets = [];
     lastTimestamp = 0;
     winner = null;
+    lastShootTime = 0;
 
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
         mobileControlsActive = true;
     }
 
-    // Сохраняем начальную позицию врага для вычисления направления
     lastEnemyPos = { ...enemyPos };
 
     requestAnimationFrame(gameLoop);
@@ -159,8 +166,10 @@ function showGameOver(message, isWinner) {
     gameScreenEl.classList.remove('active');
     gameOverScreenEl.classList.add('active');
     gameoverMessageEl.textContent = message;
-    if (restartBtnEl) restartBtnEl.disabled = false;
-    if (restartStatusEl) restartStatusEl.textContent = '';
+    if (restartBtnEl) {
+        restartBtnEl.disabled = false;
+        restartStatusEl.textContent = '';
+    }
 }
 
 export function setCurrentRoom(roomCode, playerNick) {
@@ -178,7 +187,6 @@ export function listenGameState(code, playerNick) {
             if (id === 'bullets' || id === 'restart' || id === 'winner') continue;
             if (id === playerNick) myPos = state[id];
             else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') {
-                // Сохраняем предыдущую позицию врага для вычисления направления
                 lastEnemyPos = { ...enemyPos };
                 enemyPos = state[id];
             }
@@ -198,6 +206,7 @@ export function listenGameState(code, playerNick) {
             }
         }
 
+        // Обработка рестарта
         if (state.restart) {
             const players = Object.keys(state).filter(k => k !== 'bullets' && k !== 'restart' && k !== 'winner');
             if (players.length === 2) {
@@ -230,6 +239,7 @@ async function restartGame() {
     };
 
     await set(ref(db, `rooms/${currentRoomCode}/gameState`), newGameState);
+    // Принудительно запускаем игру у себя
     startGame();
 }
 
@@ -261,7 +271,7 @@ function gameLoop(timestamp) {
     updateGame(deltaTime);
     updateBullets(deltaTime);
     updateCamera();
-    updateEnemyTurret(); // вычисляем направление пушки врага
+    updateEnemyTurret();
     draw();
     requestAnimationFrame(gameLoop);
 }
@@ -360,7 +370,6 @@ function updateBullets(deltaTime) {
     }
 }
 
-// Вычисляем направление пушки врага: от его центра к центру игрока
 function updateEnemyTurret() {
     let dx = myPos.x - enemyPos.x;
     let dy = myPos.y - enemyPos.y;
@@ -421,14 +430,12 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
-    // --- Пули: улучшенная отрисовка ---
-    const bulletSize = BULLET_RADIUS * scaleX * 1.5; // немного крупнее
+    const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
     myBullets.forEach(b => {
         const sx = toScreenX(b.x);
         const sy = toScreenY(b.y);
-        // Градиент для эффекта свечения
         const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, bulletSize);
         grad.addColorStop(0, '#ffaa00');
         grad.addColorStop(1, '#ff5500');
@@ -448,7 +455,7 @@ function draw() {
         ctx.arc(sx, sy, bulletSize, 0, 2 * Math.PI);
         ctx.fill();
     });
-    ctx.shadowBlur = 0; // сбросить для остальных объектов
+    ctx.shadowBlur = 0;
 
     drawTank(enemyPos.x, enemyPos.y, '#E53935', enemyTurretDir);
     drawTank(myPos.x, myPos.y, '#1E88E5', lastMoveDir);
