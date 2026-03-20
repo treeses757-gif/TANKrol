@@ -48,6 +48,7 @@ export function initRoom(components) {
             if (snap.exists()) {
                 return createBtn.onclick();
             }
+            // Генерируем карту на весь экран (можно заменить на фиксированные 2000x2000)
             const map = getRandomMap(code, window.innerWidth, window.innerHeight);
             await set(roomRef, {
                 players: { [currentPlayerNick]: true },
