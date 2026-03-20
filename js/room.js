@@ -3,6 +3,7 @@ import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/
 import { startGame, listenGameState, gameActive, loadMap } from './game.js';
 import { getRandomMap } from './maps.js';
 import { isPositionFree } from './utils.js';
+import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, TANK_HALF } from './config.js';
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
@@ -25,18 +26,16 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    function findFreePosition(obstacles, radius = 20, maxAttempts = 2000) {
-        const margin = radius;
-        const maxX = window.innerWidth - margin;
-        const maxY = window.innerHeight - margin;
+    function findFreePosition(obstacles, maxAttempts = 2000) {
+        const radius = TANK_HALF;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const x = margin + Math.random() * (maxX - margin);
-            const y = margin + Math.random() * (maxY - margin);
+            const x = radius + Math.random() * (VIRTUAL_WIDTH - 2 * radius);
+            const y = radius + Math.random() * (VIRTUAL_HEIGHT - 2 * radius);
             if (isPositionFree(x, y, radius, obstacles)) {
                 return { x, y };
             }
         }
-        return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        return { x: VIRTUAL_WIDTH / 2, y: VIRTUAL_HEIGHT / 2 };
     }
 
     createBtn.onclick = async () => {
@@ -48,8 +47,7 @@ export function initRoom(components) {
             if (snap.exists()) {
                 return createBtn.onclick();
             }
-            // Генерируем карту на весь экран (можно заменить на фиксированные 2000x2000)
-            const map = getRandomMap(code, window.innerWidth, window.innerHeight);
+            const map = getRandomMap(code);
             await set(roomRef, {
                 players: { [currentPlayerNick]: true },
                 gameState: null,
@@ -116,8 +114,12 @@ export function initRoom(components) {
                     const obstacles = data.map || [];
                     let pos1 = findFreePosition(obstacles);
                     let pos2 = findFreePosition(obstacles);
-                    while (Math.hypot(pos1.x - pos2.x, pos1.y - pos2.y) < 100) {
-                        pos2 = findFreePosition(obstacles);
+                    // Размещаем игроков в противоположных углах
+                    const centerX = VIRTUAL_WIDTH / 2;
+                    const centerY = VIRTUAL_HEIGHT / 2;
+                    while (Math.hypot(pos1.x - pos2.x, pos1.y - pos2.y) < 400) {
+                        pos1 = { x: 100 + Math.random() * 200, y: 100 + Math.random() * 200 };
+                        pos2 = { x: VIRTUAL_WIDTH - 300 + Math.random() * 200, y: VIRTUAL_HEIGHT - 300 + Math.random() * 200 };
                     }
                     const gameState = {
                         [Object.keys(players)[0]]: pos1,
