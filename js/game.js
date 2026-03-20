@@ -1,6 +1,8 @@
 import { db } from './firebase.js';
 import { ref, onValue, update, get } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { isPositionFree, circleRectCollide } from './utils.js';
+// +++ Импорт мобильного управления +++
+import { initMobileControls, getJoystickDirection, removeMobileControls } from './mobile-controls.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
@@ -16,6 +18,10 @@ let lastMoveDir = { x: 0, y: -1 };
 let obstacles = [];
 let lastTimestamp = 0;
 let winner = null;
+
+// +++ Определяем, мобильное ли устройство +++
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+let mobileControlsActive = false; // флаг, что контроллеры созданы
 
 const PLAYER_SPEED = 200;
 const BULLET_SPEED = 400;
@@ -35,6 +41,10 @@ export function initGame(components) {
 
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
+
+    // +++ Запрещаем скролл при касании canvas на мобильных +++
+    canvas.addEventListener('touchstart', (e) => e.preventDefault());
+    canvas.addEventListener('touchmove', (e) => e.preventDefault());
 
     window.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -99,11 +109,23 @@ export function startGame() {
     enemyBullets = [];
     lastTimestamp = 0;
     winner = null;
+
+    // +++ Создаём мобильные контроллеры, если нужно и их ещё нет +++
+    if (isMobile && !document.getElementById('mobile-controls')) {
+        initMobileControls(canvas, shoot);
+        mobileControlsActive = true;
+    }
+
     requestAnimationFrame(gameLoop);
 }
 
 export function stopGame() {
     gameActive = false;
+    // +++ Удаляем мобильные контроллеры при выходе из игры +++
+    if (isMobile && mobileControlsActive) {
+        removeMobileControls();
+        mobileControlsActive = false;
+    }
 }
 
 function showGameOver(message, isWinner) {
@@ -224,10 +246,23 @@ function updateGame(deltaTime) {
     let newX = myPos.x;
     let newY = myPos.y;
 
+    // +++ Управление с клавиатуры +++
     if (keys['ArrowUp'] || keys['KeyW']) { newY -= move; lastMoveDir = { x: 0, y: -1 }; }
     if (keys['ArrowDown'] || keys['KeyS']) { newY += move; lastMoveDir = { x: 0, y: 1 }; }
     if (keys['ArrowLeft'] || keys['KeyA']) { newX -= move; lastMoveDir = { x: -1, y: 0 }; }
     if (keys['ArrowRight'] || keys['KeyD']) { newX += move; lastMoveDir = { x: 1, y: 0 }; }
+
+    // +++ Управление с джойстика (если активно) +++
+    if (isMobile && mobileControlsActive) {
+        const jDir = getJoystickDirection();
+        if (jDir.x !== 0 || jDir.y !== 0) {
+            // Обновляем направление для выстрела
+            lastMoveDir.x = jDir.x;
+            lastMoveDir.y = jDir.y;
+            newX += jDir.x * move;
+            newY += jDir.y * move;
+        }
+    }
 
     newX = Math.max(TANK_HALF, Math.min(canvas.width - TANK_HALF, newX));
     newY = Math.max(TANK_HALF, Math.min(canvas.height - TANK_HALF, newY));
@@ -300,16 +335,13 @@ function drawTank(x, y, color, direction) {
     const left = x - w/2;
     const top = y - h/2;
 
-    // Корпус
     ctx.fillStyle = color;
     ctx.fillRect(left, top, w, h);
 
-    // Гусеницы (чёрные полосы сверху и снизу)
     ctx.fillStyle = '#333';
-    ctx.fillRect(left, top, w, 5);           // верхняя гусеница
-    ctx.fillRect(left, top + h - 5, w, 5);  // нижняя гусеница
+    ctx.fillRect(left, top, w, 5);
+    ctx.fillRect(left, top + h - 5, w, 5);
 
-    // Башня (круглая)
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(x, y, w * 0.3, 0, 2 * Math.PI);
@@ -318,7 +350,6 @@ function drawTank(x, y, color, direction) {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Пушка (линия в направлении движения)
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(x + direction.x * w * 0.6, y + direction.y * w * 0.6);
@@ -330,13 +361,11 @@ function drawTank(x, y, color, direction) {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
     });
 
-    // Свои пули (синие)
     ctx.fillStyle = '#00f';
     myBullets.forEach(b => {
         ctx.beginPath();
@@ -344,7 +373,6 @@ function draw() {
         ctx.fill();
     });
 
-    // Вражеские пули (красные)
     ctx.fillStyle = '#f00';
     enemyBullets.forEach(b => {
         ctx.beginPath();
@@ -352,12 +380,6 @@ function draw() {
         ctx.fill();
     });
 
-    // Вражеский танк (красный) – направим пушку вниз
     drawTank(enemyPos.x, enemyPos.y, '#E53935', { x: 0, y: 1 });
-
-    // Свой танк (синий) с направлением последнего движения
     drawTank(myPos.x, myPos.y, '#1E88E5', lastMoveDir);
-
-    // Отладка: выведем в консоль координаты один раз
-    if (Math.random() < 0.01) console.log('Рисую танки:', myPos, enemyPos);
 }
