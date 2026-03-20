@@ -63,8 +63,10 @@ function shoot() {
         owner: currentPlayerNick
     };
     myBullets.push(bullet);
+    // Отправляем в Firebase с уникальным ключом
+    const bulletKey = `bullet_${Date.now()}_${Math.random()}`;
     update(ref(db), {
-        [`rooms/${currentRoomCode}/gameState/bullets/${Date.now()}`]: bullet
+        [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: bullet
     });
 }
 
@@ -101,11 +103,13 @@ export function listenGameState(code, playerNick) {
     gameListener = onValue(ref(db, `rooms/${code}/gameState`), (snap) => {
         const state = snap.val();
         if (!state) return;
+        // Обновляем позиции игроков
         for (let id in state) {
             if (id === 'bullets') continue;
             if (id === playerNick) myPos = state[id];
             else if (id !== 'bullets') enemyPos = state[id];
         }
+        // Обновляем пули противника (все, кроме своих)
         if (state.bullets) {
             enemyBullets = Object.values(state.bullets).filter(b => b.owner !== playerNick);
         }
@@ -153,16 +157,19 @@ function updateGame(deltaTime) {
 }
 
 function updateBullets(deltaTime) {
+    // Двигаем свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
+        // Границы
         if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
             myBullets.splice(i, 1);
             continue;
         }
 
+        // Столкновение с препятствиями
         let hit = false;
         for (let obs of obstacles) {
             if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
@@ -173,6 +180,7 @@ function updateBullets(deltaTime) {
         }
         if (hit) continue;
 
+        // Попадание во врага
         const dx = b.x - enemyPos.x;
         const dy = b.y - enemyPos.y;
         if (dx * dx + dy * dy < (PLAYER_RADIUS + BULLET_RADIUS) ** 2) {
@@ -182,6 +190,7 @@ function updateBullets(deltaTime) {
         }
     }
 
+    // Двигаем вражеские пули и проверяем попадание в нас
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         b.x += b.vx * deltaTime;
@@ -195,6 +204,7 @@ function updateBullets(deltaTime) {
             return;
         }
 
+        // Удаляем, если улетели за экран
         if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
             enemyBullets.splice(i, 1);
         }
@@ -204,11 +214,13 @@ function updateBullets(deltaTime) {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
     });
 
+    // Свои пули (синие)
     ctx.fillStyle = '#00f';
     myBullets.forEach(b => {
         ctx.beginPath();
@@ -216,6 +228,7 @@ function draw() {
         ctx.fill();
     });
 
+    // Вражеские пули (красные)
     ctx.fillStyle = '#f00';
     enemyBullets.forEach(b => {
         ctx.beginPath();
@@ -223,6 +236,7 @@ function draw() {
         ctx.fill();
     });
 
+    // Вражеский танк
     if (tankRedImg.complete && tankRedImg.naturalHeight !== 0) {
         ctx.drawImage(tankRedImg, enemyPos.x - 20, enemyPos.y - 20, 40, 40);
     } else {
@@ -232,6 +246,7 @@ function draw() {
         ctx.fill();
     }
 
+    // Свой танк
     if (tankBlueImg.complete && tankBlueImg.naturalHeight !== 0) {
         ctx.drawImage(tankBlueImg, myPos.x - 20, myPos.y - 20, 40, 40);
     } else {
