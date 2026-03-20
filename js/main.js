@@ -1,4 +1,4 @@
-import { db } from './firebase.js';
+import './firebase.js';
 import { initAuth } from './auth.js';
 import { initRoom } from './room.js';
 import { initGame, startGame, stopGame, setCurrentRoom, listenGameState, gameActive } from './game.js';
@@ -7,6 +7,11 @@ import { initGame, startGame, stopGame, setCurrentRoom, listenGameState, gameAct
 const authScreen = document.getElementById('auth-screen');
 const lobbyScreen = document.getElementById('lobby');
 const gameScreen = document.getElementById('game');
+const gameOverScreen = document.getElementById('game-over');          // новое
+const gameoverMessage = document.getElementById('gameover-message');  // новое
+const restartBtn = document.getElementById('restart-btn');            // новое
+const restartStatus = document.getElementById('restart-status');      // новое
+
 const loginForm = document.getElementById('login-form');
 const registerForm = document.getElementById('register-form');
 const showLoginBtn = document.getElementById('show-login');
@@ -30,10 +35,16 @@ if (currentPlayerNick) {
     userNickSpan.textContent = currentPlayerNick;
 }
 
-// Инициализация игры
-initGame({ gameScreen, lobbyScreen });
+// Инициализация игры с новыми элементами
+initGame({
+    gameScreen,
+    lobbyScreen,
+    gameOverScreen,
+    gameoverMessage,
+    restartBtn,
+    restartStatus
+});
 
-// Инициализация комнаты
 const roomHandlers = initRoom({
     createBtn,
     joinBtn,
@@ -44,8 +55,6 @@ const roomHandlers = initRoom({
     statusDiv,
     onRoomJoined: (code) => {
         setCurrentRoom(code, currentPlayerNick);
-        listenGameState(code, currentPlayerNick);
-        startGame();
     },
     onRoomLeft: () => {
         stopGame();
@@ -53,7 +62,6 @@ const roomHandlers = initRoom({
     }
 });
 
-// Инициализация аутентификации
 initAuth({
     authScreen,
     lobbyScreen,
@@ -79,6 +87,6 @@ roomHandlers.setPlayerNick(currentPlayerNick);
 
 window.addEventListener('beforeunload', () => {
     if (currentPlayerNick && roomHandlers.getRoomCode()) {
-        // Firebase очистит при отключении
+        // очистка при необходимости
     }
 });
