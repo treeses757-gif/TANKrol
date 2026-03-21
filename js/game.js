@@ -7,8 +7,8 @@ import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
-let myBullets = [];
-let enemyBullets = [];
+let myBullets = [];      // свои пули
+let enemyBullets = [];    // пули противника
 let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
@@ -186,30 +186,30 @@ export function listenGameState(code, playerNick) {
             else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') enemyPos = state[id];
         }
 
-        // Синхронизация пуль противника: сохраняем локально только те, которые ещё есть в Firebase
-        const remoteBullets = state.bullets || {};
-        const newEnemyBullets = [];
-
-        // Сначала оставляем существующие пули, которые ещё есть в remoteBullets
-        for (let b of enemyBullets) {
-            if (remoteBullets[b.key]) {
-                // Сохраняем локальные координаты (они актуальны)
-                newEnemyBullets.push(b);
-            }
-        }
-
-        // Добавляем новые пули, которых ещё нет в локальном массиве
-        for (let key in remoteBullets) {
-            const bullet = remoteBullets[key];
-            if (bullet.owner !== playerNick) {
-                const exists = newEnemyBullets.some(b => b.key === key);
-                if (!exists) {
-                    newEnemyBullets.push({ ...bullet });
+        // Синхронизация пуль
+        if (state.bullets) {
+            const currentKeys = new Set();
+            for (let key in state.bullets) {
+                currentKeys.add(key);
+                const bullet = state.bullets[key];
+                if (bullet.owner !== playerNick) {
+                    const existing = enemyBullets.find(b => b.key === key);
+                    if (!existing) {
+                        enemyBullets.push({ ...bullet });
+                        console.log('Добавлена вражеская пуля', bullet.key);
+                    }
                 }
             }
+            // Удаляем пули, которых больше нет в Firebase
+            for (let i = enemyBullets.length - 1; i >= 0; i--) {
+                if (!currentKeys.has(enemyBullets[i].key)) {
+                    console.log('Удалена вражеская пуля', enemyBullets[i].key);
+                    enemyBullets.splice(i, 1);
+                }
+            }
+        } else {
+            enemyBullets = [];
         }
-
-        enemyBullets = newEnemyBullets;
 
         if (state.winner) {
             winner = state.winner;
@@ -321,12 +321,20 @@ function updateGame(deltaTime) {
 }
 
 function updateBullets(deltaTime) {
-    // Свои пули
-    for (let i = myBullets.length - 1; i >= 0; i--) {
-        const b = myBullets[i];
+    // Двигаем все пули (и свои, и вражеские)
+    for (let b of myBullets) {
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
+    }
+    for (let b of enemyBullets) {
+        b.x += b.vx * deltaTime;
+        b.y += b.vy * deltaTime;
+    }
 
+    // Проверка своих пуль
+    for (let i = myBullets.length - 1; i >= 0; i--) {
+        const b = myBullets[i];
+        // Выход за границы
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             if (currentRoomCode && b.key) {
                 remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
@@ -334,7 +342,7 @@ function updateBullets(deltaTime) {
             myBullets.splice(i, 1);
             continue;
         }
-
+        // Столкновение с препятствиями
         let hit = false;
         for (let obs of obstacles) {
             if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
@@ -348,6 +356,7 @@ function updateBullets(deltaTime) {
         }
         if (hit) continue;
 
+        // Попадание во врага
         const dx = b.x - enemyPos.x;
         const dy = b.y - enemyPos.y;
         if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
@@ -362,12 +371,10 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Вражеские пули
+    // Проверка вражеских пуль (попадание в нас)
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
-        b.x += b.vx * deltaTime;
-        b.y += b.vy * deltaTime;
-
+        // Удаляем, если вышла за границы (владелец уже удалил из БД)
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             enemyBullets.splice(i, 1);
             continue;
