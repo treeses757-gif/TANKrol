@@ -7,8 +7,8 @@ import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
-let myBullets = [];
-let enemyBullets = [];
+let myBullets = [];      // ключ -> объект пули
+let enemyBullets = [];    // массив пуль противника
 let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
@@ -21,10 +21,9 @@ let winner = null;
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
-let lastEnemyPos = { x: 0, y: 0 };
 let enemyTurretDir = { x: 0, y: 1 };
 
-// Задержка стрельбы (секунды)
+// Задержка стрельбы (сек)
 const SHOOT_DELAY = 0.5;
 let lastShootTime = 0;
 
@@ -89,7 +88,6 @@ export function initGame(components) {
     if (restartBtnEl) {
         restartBtnEl.addEventListener('click', () => {
             if (!currentRoomCode || !currentPlayerNick) return;
-            // Отправляем свою готовность
             update(ref(db), {
                 [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true
             });
@@ -109,7 +107,7 @@ function resizeCanvas() {
 function shoot() {
     if (!gameActive || !currentRoomCode) return;
     const now = Date.now() / 1000;
-    if (now - lastShootTime < SHOOT_DELAY) return; // задержка
+    if (now - lastShootTime < SHOOT_DELAY) return;
     lastShootTime = now;
 
     const bulletKey = Date.now() + '_' + Math.random().toString(36).substr(2, 5);
@@ -119,7 +117,8 @@ function shoot() {
         vx: lastMoveDir.x * BULLET_SPEED,
         vy: lastMoveDir.y * BULLET_SPEED,
         owner: currentPlayerNick,
-        key: bulletKey
+        key: bulletKey,
+        createdAt: Date.now()
     };
     myBullets.push(bullet);
     update(ref(db), {
@@ -150,8 +149,6 @@ export function startGame() {
         mobileControlsActive = true;
     }
 
-    // Сохраняем начальную позицию врага для направления пушки
-    lastEnemyPos = { ...enemyPos };
     requestAnimationFrame(gameLoop);
 }
 
@@ -183,20 +180,35 @@ export function listenGameState(code, playerNick) {
         const state = snap.val();
         if (!state) return;
 
+        // Обновляем позиции игроков
         for (let id in state) {
             if (id === 'bullets' || id === 'restart' || id === 'winner') continue;
             if (id === playerNick) myPos = state[id];
-            else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') {
-                lastEnemyPos = { ...enemyPos };
-                enemyPos = state[id];
-            }
+            else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') enemyPos = state[id];
         }
 
+        // Синхронизация пуль противника
         if (state.bullets) {
-            // Получаем пули противника (owner !== playerNick)
-            enemyBullets = Object.values(state.bullets).filter(b => b.owner !== playerNick);
-            // Также очищаем старые пули из Firebase, которые вышли за пределы (опционально)
-            // Удаление старых пуль из БД происходит при их выходе за границы на стороне владельца
+            // Создаём карту существующих вражеских пуль по ключу
+            const existingMap = new Map();
+            for (let b of enemyBullets) {
+                existingMap.set(b.key, b);
+            }
+
+            const newEnemyBullets = [];
+            for (let key in state.bullets) {
+                const bullet = state.bullets[key];
+                if (bullet.owner !== playerNick) {
+                    // Если пуля уже есть в массиве, используем её текущие координаты (не перезаписываем)
+                    if (existingMap.has(key)) {
+                        newEnemyBullets.push(existingMap.get(key));
+                    } else {
+                        // Новая пуля – добавляем
+                        newEnemyBullets.push({ ...bullet });
+                    }
+                }
+            }
+            enemyBullets = newEnemyBullets;
         } else {
             enemyBullets = [];
         }
@@ -231,7 +243,7 @@ async function restartGame() {
     const players = Object.keys(data.players || {});
     if (players.length !== 2) return;
 
-    // Фиксированные позиции в противоположных углах
+    // Устанавливаем позиции в противоположные углы
     const pos1 = { x: 100, y: 100 };
     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
 
@@ -312,13 +324,13 @@ function updateGame(deltaTime) {
 }
 
 function updateBullets(deltaTime) {
-    // Обновляем свои пули
+    // 1. Двигаем свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
-        // Проверка выхода за границы виртуального мира
+        // Проверка выхода за границы
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             if (currentRoomCode && b.key) {
                 remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
@@ -356,11 +368,19 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Обновляем вражеские пули (только для отрисовки, их движение уже обновлено на стороне владельца)
-    // Здесь просто удаляем старые, которые могли быть удалены из БД
+    // 2. Двигаем вражеские пули (локально)
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
-        // Проверка попадания в нас (если игра ещё активна)
+        b.x += b.vx * deltaTime;
+        b.y += b.vy * deltaTime;
+
+        // Проверка выхода за границы (на стороне врага они будут удалены из БД)
+        if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
+            enemyBullets.splice(i, 1);
+            continue;
+        }
+
+        // Попадание в нас (если игра ещё активна)
         if (!winner) {
             const dx = b.x - myPos.x;
             const dy = b.y - myPos.y;
@@ -370,12 +390,6 @@ function updateBullets(deltaTime) {
                 });
                 return;
             }
-        }
-        // Если пуля вышла за пределы мира (на стороне владельца она уже удалена из БД,
-        // но у нас она остаётся в массиве, пока не получим обновление. Можно удалить по ключу,
-        // но проще периодически чистить массив. Однако для простоты оставим так.
-        if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
-            enemyBullets.splice(i, 1);
         }
     }
 }
@@ -431,7 +445,6 @@ function draw() {
     const scaleX = getScaleX();
     const scaleY = getScaleY();
 
-    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         const sx = toScreenX(obs.x);
@@ -441,7 +454,6 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
-    // Пули (улучшенная отрисовка)
     const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
