@@ -4,6 +4,7 @@ import { isPositionFree, circleRectCollide } from './utils.js';
 import { initMobileControls, getJoystickDirection, removeMobileControls } from './mobile-controls.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_SIZE, TANK_HALF, BULLET_RADIUS } from './config.js';
 
+// Игровое состояние
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
@@ -19,18 +20,25 @@ let obstacles = [];
 let lastTimestamp = 0;
 let winner = null;
 
+// Камера
 let cameraX = 0, cameraY = 0;
-let useCamera = false;
+let useCamera = false;   // true на ПК, false на мобильных
+
+// Направление пушки врага
 let enemyTurretDir = { x: 0, y: 1 };
 
-const SHOOT_DELAY = 0.5;
+// Задержка стрельбы
+const SHOOT_DELAY = 0.5; // секунд
 let lastShootTime = 0;
 
+// Мобильное управление
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 let mobileControlsActive = false;
 
+// Элементы DOM
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, restartBtnEl, restartStatusEl;
 
+// Вспомогательные функции для преобразования координат
 function toScreenX(vx) {
     if (useCamera) {
         return ((vx - cameraX) / VIEWPORT_WIDTH) * canvas.width;
@@ -52,6 +60,7 @@ function getScaleY() {
     return useCamera ? canvas.height / VIEWPORT_HEIGHT : canvas.height / VIRTUAL_HEIGHT;
 }
 
+// Инициализация
 export function initGame(components) {
     lobbyScreenEl = components.lobbyScreen;
     gameScreenEl = components.gameScreen;
@@ -63,11 +72,13 @@ export function initGame(components) {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
-    useCamera = !isMobile;
+    useCamera = !isMobile; // ПК – камера, мобильный – вся карта
 
+    // Запрещаем скролл при касании canvas на мобильных
     canvas.addEventListener('touchstart', (e) => e.preventDefault());
     canvas.addEventListener('touchmove', (e) => e.preventDefault());
 
+    // Клавиатура
     window.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         keys[e.code] = true;
@@ -84,6 +95,7 @@ export function initGame(components) {
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
+    // Кнопка "Заново"
     if (restartBtnEl) {
         restartBtnEl.addEventListener('click', () => {
             if (!currentRoomCode || !currentPlayerNick) return;
@@ -103,6 +115,7 @@ function resizeCanvas() {
     }
 }
 
+// Выстрел
 function shoot() {
     if (!gameActive || !currentRoomCode) return;
     const now = Date.now() / 1000;
@@ -116,8 +129,7 @@ function shoot() {
         vx: lastMoveDir.x * BULLET_SPEED,
         vy: lastMoveDir.y * BULLET_SPEED,
         owner: currentPlayerNick,
-        key: bulletKey,
-        createdAt: Date.now()
+        key: bulletKey
     };
     myBullets.push(bullet);
     update(ref(db), {
@@ -125,6 +137,7 @@ function shoot() {
     });
 }
 
+// Запуск игры
 export function startGame() {
     if (!gameScreenEl || !lobbyScreenEl) return;
 
@@ -151,6 +164,7 @@ export function startGame() {
     requestAnimationFrame(gameLoop);
 }
 
+// Остановка игры
 export function stopGame() {
     gameActive = false;
     if (isMobile && mobileControlsActive) {
@@ -159,7 +173,8 @@ export function stopGame() {
     }
 }
 
-function showGameOver(message, isWinner) {
+// Показ экрана победы/поражения
+function showGameOver(message) {
     gameActive = false;
     gameScreenEl.classList.remove('active');
     gameOverScreenEl.classList.add('active');
@@ -168,11 +183,13 @@ function showGameOver(message, isWinner) {
     if (restartStatusEl) restartStatusEl.textContent = '';
 }
 
+// Установка текущей комнаты и ника
 export function setCurrentRoom(roomCode, playerNick) {
     currentRoomCode = roomCode;
     currentPlayerNick = playerNick;
 }
 
+// Слушатель состояния игры (позиции, пули, рестарт)
 export function listenGameState(code, playerNick) {
     if (gameListener) gameListener();
     gameListener = onValue(ref(db, `rooms/${code}/gameState`), (snap) => {
@@ -186,41 +203,37 @@ export function listenGameState(code, playerNick) {
             else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') enemyPos = state[id];
         }
 
-        // Синхронизация пуль
+        // Синхронизация пуль противника
         if (state.bullets) {
             const currentKeys = new Set();
             for (let key in state.bullets) {
                 currentKeys.add(key);
                 const bullet = state.bullets[key];
                 if (bullet.owner !== playerNick) {
-                    const existing = enemyBullets.find(b => b.key === key);
-                    if (!existing) {
+                    // Если пули ещё нет в локальном массиве – добавляем
+                    if (!enemyBullets.some(b => b.key === key)) {
                         enemyBullets.push({ ...bullet });
-                        console.log('Добавлена вражеская пуля', bullet.key);
                     }
                 }
             }
             // Удаляем пули, которых больше нет в Firebase
-            for (let i = enemyBullets.length - 1; i >= 0; i--) {
-                if (!currentKeys.has(enemyBullets[i].key)) {
-                    console.log('Удалена вражеская пуля', enemyBullets[i].key);
-                    enemyBullets.splice(i, 1);
-                }
-            }
+            enemyBullets = enemyBullets.filter(b => currentKeys.has(b.key));
         } else {
             enemyBullets = [];
         }
 
+        // Победитель
         if (state.winner) {
             winner = state.winner;
             if (!gameActive) return;
             if (winner === playerNick) {
-                showGameOver('Вы победили!', true);
+                showGameOver('Вы победили!');
             } else {
-                showGameOver('Вы проиграли!', false);
+                showGameOver('Вы проиграли!');
             }
         }
 
+        // Рестарт
         if (state.restart) {
             const players = Object.keys(state).filter(k => k !== 'bullets' && k !== 'restart' && k !== 'winner');
             if (players.length === 2) {
@@ -233,6 +246,7 @@ export function listenGameState(code, playerNick) {
     });
 }
 
+// Перезапуск игры (вызывается, когда оба нажали "Заново")
 async function restartGame() {
     if (!currentRoomCode) return;
     const roomRef = ref(db, `rooms/${currentRoomCode}`);
@@ -241,6 +255,7 @@ async function restartGame() {
     const players = Object.keys(data.players || {});
     if (players.length !== 2) return;
 
+    // Новые позиции в противоположных углах
     const pos1 = { x: 100, y: 100 };
     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
 
@@ -256,6 +271,7 @@ async function restartGame() {
     startGame();
 }
 
+// Загрузка карты (препятствий)
 export function loadMap(roomCode) {
     onValue(ref(db, `rooms/${roomCode}/map`), (snap) => {
         obstacles = snap.val() || [];
@@ -263,6 +279,7 @@ export function loadMap(roomCode) {
     }, { onlyOnce: true });
 }
 
+// Обновление камеры (только на ПК)
 function updateCamera() {
     if (!useCamera) {
         cameraX = 0;
@@ -275,6 +292,7 @@ function updateCamera() {
     cameraY = Math.max(0, Math.min(VIRTUAL_HEIGHT - VIEWPORT_HEIGHT, cameraY));
 }
 
+// Главный цикл
 function gameLoop(timestamp) {
     if (!gameActive) return;
     if (lastTimestamp === 0) lastTimestamp = timestamp;
@@ -289,6 +307,7 @@ function gameLoop(timestamp) {
     requestAnimationFrame(gameLoop);
 }
 
+// Движение игрока
 function updateGame(deltaTime) {
     if (!currentRoomCode || !currentPlayerNick || !canvas) return;
     const move = PLAYER_SPEED * deltaTime;
@@ -320,8 +339,9 @@ function updateGame(deltaTime) {
     }
 }
 
+// Движение и проверка пуль
 function updateBullets(deltaTime) {
-    // Двигаем все пули (и свои, и вражеские)
+    // 1. Двигаем все пули (свои и вражеские)
     for (let b of myBullets) {
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
@@ -331,7 +351,7 @@ function updateBullets(deltaTime) {
         b.y += b.vy * deltaTime;
     }
 
-    // Проверка своих пуль
+    // 2. Проверка своих пуль
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         // Выход за границы
@@ -371,15 +391,9 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Проверка вражеских пуль (попадание в нас)
+    // 3. Проверка вражеских пуль (попадание в нас)
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
-        // Удаляем, если вышла за границы (владелец уже удалил из БД)
-        if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
-            enemyBullets.splice(i, 1);
-            continue;
-        }
-
         if (!winner) {
             const dx = b.x - myPos.x;
             const dy = b.y - myPos.y;
@@ -390,9 +404,14 @@ function updateBullets(deltaTime) {
                 return;
             }
         }
+        // Если пуля вышла за границы, удаляем из массива (владелец уже удалил из БД)
+        if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
+            enemyBullets.splice(i, 1);
+        }
     }
 }
 
+// Направление пушки врага на игрока
 function updateEnemyTurret() {
     let dx = myPos.x - enemyPos.x;
     let dy = myPos.y - enemyPos.y;
@@ -404,6 +423,7 @@ function updateEnemyTurret() {
     }
 }
 
+// Отрисовка танка
 function drawTank(x, y, color, direction) {
     const sx = toScreenX(x);
     const sy = toScreenY(y);
@@ -438,12 +458,14 @@ function drawTank(x, y, color, direction) {
     ctx.stroke();
 }
 
+// Основная отрисовка
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const scaleX = getScaleX();
     const scaleY = getScaleY();
 
+    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         const sx = toScreenX(obs.x);
@@ -453,10 +475,11 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
+    // Пули
     const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
-    myBullets.forEach(b => {
+    for (let b of myBullets) {
         const sx = toScreenX(b.x);
         const sy = toScreenY(b.y);
         const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, bulletSize);
@@ -466,8 +489,8 @@ function draw() {
         ctx.beginPath();
         ctx.arc(sx, sy, bulletSize, 0, 2 * Math.PI);
         ctx.fill();
-    });
-    enemyBullets.forEach(b => {
+    }
+    for (let b of enemyBullets) {
         const sx = toScreenX(b.x);
         const sy = toScreenY(b.y);
         const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, bulletSize);
@@ -477,9 +500,10 @@ function draw() {
         ctx.beginPath();
         ctx.arc(sx, sy, bulletSize, 0, 2 * Math.PI);
         ctx.fill();
-    });
+    }
     ctx.shadowBlur = 0;
 
+    // Танки
     drawTank(enemyPos.x, enemyPos.y, '#E53935', enemyTurretDir);
     drawTank(myPos.x, myPos.y, '#1E88E5', lastMoveDir);
 }
