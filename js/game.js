@@ -18,13 +18,15 @@ let lastMoveDir = { x: 0, y: -1 };
 let obstacles = [];
 let lastTimestamp = 0;
 let winner = null;
-let lastShootTime = 0;
-const SHOOT_DELAY = 500; // миллисекунд
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
 let lastEnemyPos = { x: 0, y: 0 };
 let enemyTurretDir = { x: 0, y: 1 };
+
+// Задержка стрельбы
+let lastShootTime = 0;
+const SHOOT_DELAY_MS = 300; // миллисекунд
 
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 let mobileControlsActive = false;
@@ -87,7 +89,6 @@ export function initGame(components) {
     if (restartBtnEl) {
         restartBtnEl.addEventListener('click', () => {
             if (!currentRoomCode || !currentPlayerNick) return;
-            // Отправляем свою готовность к рестарту
             update(ref(db), {
                 [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true
             });
@@ -107,10 +108,10 @@ function resizeCanvas() {
 function shoot() {
     if (!gameActive || !currentRoomCode) return;
     const now = Date.now();
-    if (now - lastShootTime < SHOOT_DELAY) return;
+    if (now - lastShootTime < SHOOT_DELAY_MS) return; // задержка
     lastShootTime = now;
 
-    const bulletKey = Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const bulletKey = now + '_' + Math.random().toString(36).substr(2, 5);
     const bullet = {
         x: myPos.x,
         y: myPos.y,
@@ -141,7 +142,6 @@ export function startGame() {
     enemyBullets = [];
     lastTimestamp = 0;
     winner = null;
-    lastShootTime = 0;
 
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
@@ -166,10 +166,8 @@ function showGameOver(message, isWinner) {
     gameScreenEl.classList.remove('active');
     gameOverScreenEl.classList.add('active');
     gameoverMessageEl.textContent = message;
-    if (restartBtnEl) {
-        restartBtnEl.disabled = false;
-        restartStatusEl.textContent = '';
-    }
+    if (restartBtnEl) restartBtnEl.disabled = false;
+    if (restartStatusEl) restartStatusEl.textContent = '';
 }
 
 export function setCurrentRoom(roomCode, playerNick) {
@@ -192,8 +190,14 @@ export function listenGameState(code, playerNick) {
             }
         }
 
+        // Обновляем вражеские пули – берем все пули, где владелец не мы
         if (state.bullets) {
-            enemyBullets = Object.values(state.bullets).filter(b => b.owner !== playerNick);
+            const bulletsObj = state.bullets;
+            enemyBullets = Object.values(bulletsObj).filter(b => b.owner !== playerNick);
+            // Также можно удалить из Firebase старые пули, которые уже вышли за пределы,
+            // но лучше это делать на стороне их владельца. Пока просто фильтруем.
+        } else {
+            enemyBullets = [];
         }
 
         if (state.winner) {
@@ -206,7 +210,6 @@ export function listenGameState(code, playerNick) {
             }
         }
 
-        // Обработка рестарта
         if (state.restart) {
             const players = Object.keys(state).filter(k => k !== 'bullets' && k !== 'restart' && k !== 'winner');
             if (players.length === 2) {
@@ -230,6 +233,7 @@ async function restartGame() {
     const pos1 = { x: 100, y: 100 };
     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
 
+    // Сброс состояния: удаляем все пули, сбрасываем победителя и рестарт
     const newGameState = {
         [players[0]]: pos1,
         [players[1]]: pos2,
@@ -239,7 +243,6 @@ async function restartGame() {
     };
 
     await set(ref(db, `rooms/${currentRoomCode}/gameState`), newGameState);
-    // Принудительно запускаем игру у себя
     startGame();
 }
 
@@ -308,6 +311,7 @@ function updateGame(deltaTime) {
 }
 
 function updateBullets(deltaTime) {
+    // Свои пули: движение, проверка границ, столкновений
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         b.x += b.vx * deltaTime;
@@ -348,6 +352,7 @@ function updateBullets(deltaTime) {
         }
     }
 
+    // Вражеские пули: обновляем их позиции и проверяем попадание в нас
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         b.x += b.vx * deltaTime;
@@ -364,6 +369,8 @@ function updateBullets(deltaTime) {
             }
         }
 
+        // Удаляем вражеские пули, вышедшие за границы (они должны удаляться из Firebase на стороне владельца,
+        // но для локальной отрисовки просто удаляем из массива)
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             enemyBullets.splice(i, 1);
         }
