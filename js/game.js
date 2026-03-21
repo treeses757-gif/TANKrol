@@ -24,9 +24,9 @@ let useCamera = false;
 let lastEnemyPos = { x: 0, y: 0 };
 let enemyTurretDir = { x: 0, y: 1 };
 
-// Задержка стрельбы
+// Задержка стрельбы (секунды)
+const SHOOT_DELAY = 0.5;
 let lastShootTime = 0;
-const SHOOT_DELAY_MS = 300; // миллисекунд
 
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 let mobileControlsActive = false;
@@ -89,6 +89,7 @@ export function initGame(components) {
     if (restartBtnEl) {
         restartBtnEl.addEventListener('click', () => {
             if (!currentRoomCode || !currentPlayerNick) return;
+            // Отправляем свою готовность
             update(ref(db), {
                 [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true
             });
@@ -107,11 +108,11 @@ function resizeCanvas() {
 
 function shoot() {
     if (!gameActive || !currentRoomCode) return;
-    const now = Date.now();
-    if (now - lastShootTime < SHOOT_DELAY_MS) return; // задержка
+    const now = Date.now() / 1000;
+    if (now - lastShootTime < SHOOT_DELAY) return; // задержка
     lastShootTime = now;
 
-    const bulletKey = now + '_' + Math.random().toString(36).substr(2, 5);
+    const bulletKey = Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     const bullet = {
         x: myPos.x,
         y: myPos.y,
@@ -142,14 +143,15 @@ export function startGame() {
     enemyBullets = [];
     lastTimestamp = 0;
     winner = null;
+    lastShootTime = 0;
 
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
         mobileControlsActive = true;
     }
 
+    // Сохраняем начальную позицию врага для направления пушки
     lastEnemyPos = { ...enemyPos };
-
     requestAnimationFrame(gameLoop);
 }
 
@@ -190,12 +192,11 @@ export function listenGameState(code, playerNick) {
             }
         }
 
-        // Обновляем вражеские пули – берем все пули, где владелец не мы
         if (state.bullets) {
-            const bulletsObj = state.bullets;
-            enemyBullets = Object.values(bulletsObj).filter(b => b.owner !== playerNick);
-            // Также можно удалить из Firebase старые пули, которые уже вышли за пределы,
-            // но лучше это делать на стороне их владельца. Пока просто фильтруем.
+            // Получаем пули противника (owner !== playerNick)
+            enemyBullets = Object.values(state.bullets).filter(b => b.owner !== playerNick);
+            // Также очищаем старые пули из Firebase, которые вышли за пределы (опционально)
+            // Удаление старых пуль из БД происходит при их выходе за границы на стороне владельца
         } else {
             enemyBullets = [];
         }
@@ -230,10 +231,10 @@ async function restartGame() {
     const players = Object.keys(data.players || {});
     if (players.length !== 2) return;
 
+    // Фиксированные позиции в противоположных углах
     const pos1 = { x: 100, y: 100 };
     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
 
-    // Сброс состояния: удаляем все пули, сбрасываем победителя и рестарт
     const newGameState = {
         [players[0]]: pos1,
         [players[1]]: pos2,
@@ -311,12 +312,13 @@ function updateGame(deltaTime) {
 }
 
 function updateBullets(deltaTime) {
-    // Свои пули: движение, проверка границ, столкновений
+    // Обновляем свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
+        // Проверка выхода за границы виртуального мира
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             if (currentRoomCode && b.key) {
                 remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
@@ -325,6 +327,7 @@ function updateBullets(deltaTime) {
             continue;
         }
 
+        // Проверка столкновения с препятствиями
         let hit = false;
         for (let obs of obstacles) {
             if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
@@ -338,6 +341,7 @@ function updateBullets(deltaTime) {
         }
         if (hit) continue;
 
+        // Попадание во врага
         const dx = b.x - enemyPos.x;
         const dy = b.y - enemyPos.y;
         if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
@@ -352,12 +356,11 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Вражеские пули: обновляем их позиции и проверяем попадание в нас
+    // Обновляем вражеские пули (только для отрисовки, их движение уже обновлено на стороне владельца)
+    // Здесь просто удаляем старые, которые могли быть удалены из БД
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
-        b.x += b.vx * deltaTime;
-        b.y += b.vy * deltaTime;
-
+        // Проверка попадания в нас (если игра ещё активна)
         if (!winner) {
             const dx = b.x - myPos.x;
             const dy = b.y - myPos.y;
@@ -368,9 +371,9 @@ function updateBullets(deltaTime) {
                 return;
             }
         }
-
-        // Удаляем вражеские пули, вышедшие за границы (они должны удаляться из Firebase на стороне владельца,
-        // но для локальной отрисовки просто удаляем из массива)
+        // Если пуля вышла за пределы мира (на стороне владельца она уже удалена из БД,
+        // но у нас она остаётся в массиве, пока не получим обновление. Можно удалить по ключу,
+        // но проще периодически чистить массив. Однако для простоты оставим так.
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             enemyBullets.splice(i, 1);
         }
@@ -428,6 +431,7 @@ function draw() {
     const scaleX = getScaleX();
     const scaleY = getScaleY();
 
+    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         const sx = toScreenX(obs.x);
@@ -437,6 +441,7 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
+    // Пули (улучшенная отрисовка)
     const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
