@@ -8,8 +8,9 @@ import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
-let myBullets = [];      // свои пули
-let enemyBullets = [];    // пули противника
+let enemyNick = null;               // ник врага, используется при определении победителя
+let myBullets = [];                 // свои пули
+let enemyBullets = [];              // пули противника
 let canvas, ctx;
 let currentRoomCode = null;
 let currentPlayerNick = null;
@@ -22,13 +23,13 @@ let winner = null;
 
 // Камера
 let cameraX = 0, cameraY = 0;
-let useCamera = false;   // true на ПК, false на мобильных
+let useCamera = false;              // true на ПК, false на мобильных
 
 // Направление пушки врага
 let enemyTurretDir = { x: 0, y: 1 };
 
 // Задержка стрельбы
-const SHOOT_DELAY = 0.5; // секунд
+const SHOOT_DELAY = 0.5;            // секунд
 let lastShootTime = 0;
 
 // Мобильное управление
@@ -72,7 +73,7 @@ export function initGame(components) {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
 
-    useCamera = !isMobile; // ПК – камера, мобильный – вся карта
+    useCamera = !isMobile;          // ПК – камера, мобильный – вся карта
 
     // Запрещаем скролл при касании canvas на мобильных
     canvas.addEventListener('touchstart', (e) => e.preventDefault());
@@ -196,11 +197,15 @@ export function listenGameState(code, playerNick) {
         const state = snap.val();
         if (!state) return;
 
-        // Обновляем позиции игроков
+        // Обновляем позиции игроков и запоминаем ник врага
         for (let id in state) {
             if (id === 'bullets' || id === 'restart' || id === 'winner') continue;
-            if (id === playerNick) myPos = state[id];
-            else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') enemyPos = state[id];
+            if (id === playerNick) {
+                myPos = state[id];
+            } else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') {
+                enemyPos = state[id];
+                enemyNick = id;            // запоминаем ник врага для корректного определения победителя
+            }
         }
 
         // Синхронизация пуль противника
@@ -259,6 +264,21 @@ async function restartGame() {
     const pos1 = { x: 100, y: 100 };
     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
 
+    // Определяем, какая позиция наша, и сразу обновляем локальные переменные
+    const myNewPos = players[0] === currentPlayerNick ? pos1 : pos2;
+    const enemyNewPos = players[0] === currentPlayerNick ? pos2 : pos1;
+
+    myPos = myNewPos;
+    enemyPos = enemyNewPos;
+
+    // Сбрасываем остальные переменные
+    myBullets = [];
+    enemyBullets = [];
+    lastShootTime = 0;
+    winner = null;
+    gameActive = true;
+
+    // Обновляем состояние в Firebase
     const newGameState = {
         [players[0]]: pos1,
         [players[1]]: pos2,
@@ -266,9 +286,15 @@ async function restartGame() {
         winner: null,
         restart: { [players[0]]: false, [players[1]]: false }
     };
-
     await set(ref(db, `rooms/${currentRoomCode}/gameState`), newGameState);
-    startGame();
+
+    // Показываем игровой экран и активируем кнопку "Заново" на будущее
+    gameScreenEl.classList.add('active');
+    gameOverScreenEl.classList.remove('active');
+    if (restartBtnEl) {
+        restartBtnEl.disabled = false;
+        restartStatusEl.textContent = '';
+    }
 }
 
 // Загрузка карты (препятствий)
@@ -307,7 +333,7 @@ function gameLoop(timestamp) {
     requestAnimationFrame(gameLoop);
 }
 
-// Движение игрока
+// Движение игрока (оптимизировано – отправляем только при изменении позиции)
 function updateGame(deltaTime) {
     if (!currentRoomCode || !currentPlayerNick || !canvas) return;
     const move = PLAYER_SPEED * deltaTime;
@@ -332,15 +358,21 @@ function updateGame(deltaTime) {
     newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
     newY = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY));
 
+    // Проверяем, изменилась ли позиция, чтобы не отправлять лишние обновления
+    const prevX = myPos.x, prevY = myPos.y;
     if (isPositionFree(newX, newY, TANK_HALF, obstacles)) {
-        myPos.x = newX;
-        myPos.y = newY;
-        update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
+        if (newX !== prevX || newY !== prevY) {
+            myPos.x = newX;
+            myPos.y = newY;
+            update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
+        }
     }
 }
 
-// Движение и проверка пуль
+// Движение и проверка пуль (с поддержкой препятствий для врага и корректным определением победителя)
 function updateBullets(deltaTime) {
+    if (winner) return; // игра уже окончена
+
     // 1. Двигаем все пули (свои и вражеские)
     for (let b of myBullets) {
         b.x += b.vx * deltaTime;
@@ -387,26 +419,40 @@ function updateBullets(deltaTime) {
             update(ref(db), {
                 [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick
             });
+            gameActive = false;   // локально останавливаем игру, чтобы не было повторных попаданий
             return;
         }
     }
 
-    // 3. Проверка вражеских пуль (попадание в нас)
+    // 3. Проверка вражеских пуль (попадание в игрока + столкновение с препятствиями)
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
-        if (!winner) {
-            const dx = b.x - myPos.x;
-            const dy = b.y - myPos.y;
-            if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
-                update(ref(db), {
-                    [`rooms/${currentRoomCode}/gameState/winner`]: 'enemy'
-                });
-                return;
+        // Столкновение с препятствиями
+        let hit = false;
+        for (let obs of obstacles) {
+            if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
+                enemyBullets.splice(i, 1);
+                hit = true;
+                break;
             }
         }
-        // Если пуля вышла за границы, удаляем из массива (владелец уже удалил из БД)
+        if (hit) continue;
+
+        // Выход за границы
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             enemyBullets.splice(i, 1);
+            continue;
+        }
+
+        // Попадание в игрока
+        const dx = b.x - myPos.x;
+        const dy = b.y - myPos.y;
+        if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
+            update(ref(db), {
+                [`rooms/${currentRoomCode}/gameState/winner`]: enemyNick
+            });
+            gameActive = false;   // локально останавливаем игру
+            return;
         }
     }
 }
