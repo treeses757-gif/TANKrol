@@ -98,7 +98,6 @@ export function initRoom(components) {
 
             if (count === 2 && data.gameState === null) {
                 if (currentPlayerNick === Object.keys(players)[0]) {
-                    // Фиксированные позиции в противоположных углах
                     const pos1 = { x: 100, y: 100 };
                     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
                     const gameState = {
