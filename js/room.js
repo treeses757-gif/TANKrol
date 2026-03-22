@@ -9,7 +9,8 @@ let currentPlayerNick = null;
 let currentRoomCode = null;
 let roomListener = null;
 let playerTank = null;
-let selectionShown = false; // флаг, чтобы не показывать выбор дважды
+let selectionShown = false;
+let gameStarting = false; // флаг для предотвращения повторного старта
 
 export function initRoom(components) {
     const {
@@ -43,6 +44,7 @@ export function initRoom(components) {
     }
 
     async function checkAndStartGame() {
+        if (gameStarting) return; // уже запускаем игру
         console.log('checkAndStartGame вызван');
         const roomRef = ref(db, `rooms/${currentRoomCode}`);
         const snap = await get(roomRef);
@@ -55,7 +57,22 @@ export function initRoom(components) {
         console.log('Выбранные танки:', tanks);
 
         if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
+            gameStarting = true;
             console.log('Оба выбрали танки, начинаем игру');
+
+            // Создаём gameState, если его нет
+            let gameState = data.gameState;
+            if (!gameState) {
+                const pos1 = { x: 100, y: 100 };
+                const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
+                gameState = {
+                    [players[0]]: pos1,
+                    [players[1]]: pos2
+                };
+                await set(ref(db, `rooms/${currentRoomCode}/gameState`), gameState);
+                console.log('Созданы начальные позиции в checkAndStartGame');
+            }
+
             hideWaitingMessage();
             const enemyNick = players.find(n => n !== currentPlayerNick);
             const enemyTank = tanks[enemyNick];
@@ -148,35 +165,16 @@ export function initRoom(components) {
             statusDiv.textContent = `Игроков: ${count}/2`;
             console.log(`Игроков в комнате: ${count}`);
 
-            // Если оба игрока подключились
-            if (count === 2 && data.gameState === null) {
-                // Создаём начальные позиции, если ещё не созданы
-                if (!data.gameState) {
-                    const playerIds = Object.keys(players);
-                    const pos1 = { x: 100, y: 100 };
-                    const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
-                    const gameState = {
-                        [playerIds[0]]: pos1,
-                        [playerIds[1]]: pos2
-                    };
-                    await set(ref(db, `rooms/${code}/gameState`), gameState);
-                    console.log('Созданы начальные позиции');
-                }
-
-                // Показываем выбор танка, если мы ещё не выбрали
-                if (currentPlayerNick && !playerTank && !selectionShown) {
-                    console.log('Оба игрока на месте, показываем выбор танка');
-                    showTankSelectionAndWait();
-                }
+            // Показываем выбор танка, когда в комнате два игрока
+            if (count === 2 && currentPlayerNick && !playerTank && !selectionShown) {
+                console.log('Оба игрока на месте, показываем выбор танка');
+                showTankSelectionAndWait();
             }
 
-            // Проверяем, выбрали ли оба танки и не начата ли игра
+            // Проверяем, выбрали ли оба танки, и если игра ещё не активна – запускаем
             const tanks = data.tanks || {};
-            if (count === 2 && tanks[players[0]] && tanks[players[1]] && data.gameState && !gameActive) {
-                if (currentPlayerNick && playerTank) {
-                    console.log('Оба выбрали танки, запускаем игру');
-                    await checkAndStartGame();
-                }
+            if (count === 2 && tanks[players[0]] && tanks[players[1]] && !gameActive) {
+                await checkAndStartGame();
             }
         });
     }
@@ -188,6 +186,7 @@ export function initRoom(components) {
         currentRoomCode = null;
         playerTank = null;
         selectionShown = false;
+        gameStarting = false;
         if (roomListener) roomListener();
         if (onRoomLeft) onRoomLeft();
     }
