@@ -3,10 +3,13 @@ import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/
 import { startGame, listenGameState, gameActive, loadMap } from './game.js';
 import { getRandomMap } from './maps.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
+import { createSelectionScreen, showWaitingMessage, hideWaitingMessage } from './selection.js';
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
 let roomListener = null;
+let playerTank = null;
+let waitingForEnemy = false;
 
 export function initRoom(components) {
     const {
@@ -25,6 +28,38 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
+    // Показать выбор танка и сохранить в Firebase
+    function showTankSelection() {
+        createSelectionScreen(async (tankId) => {
+            playerTank = tankId;
+            // Сохраняем выбор в Firebase
+            await update(ref(db), {
+                [`rooms/${currentRoomCode}/tanks/${currentPlayerNick}`]: tankId
+            });
+            // Если соперник уже выбрал, начинаем игру
+            checkAndStartGame();
+        });
+    }
+
+    async function checkAndStartGame() {
+        const roomRef = ref(db, `rooms/${currentRoomCode}`);
+        const snap = await get(roomRef);
+        const data = snap.val();
+        const players = Object.keys(data.players || {});
+        const tanks = data.tanks || {};
+        if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
+            // Оба выбрали танки – можно начинать игру
+            hideWaitingMessage();
+            loadMap(currentRoomCode);
+            startGame(currentRoomCode, currentPlayerNick, playerTank, tanks[players.find(n => n !== currentPlayerNick)]);
+            listenGameState(currentRoomCode, currentPlayerNick);
+            if (onRoomJoined) onRoomJoined(currentRoomCode);
+        } else {
+            // Ждём выбора соперника
+            showWaitingMessage();
+        }
+    }
+
     createBtn.onclick = async () => {
         if (!currentPlayerNick) { alert('Сначала войдите'); return; }
         const code = generateCode();
@@ -39,13 +74,15 @@ export function initRoom(components) {
                 players: { [currentPlayerNick]: true },
                 gameState: null,
                 map: map,
-                abilities: {}
+                tanks: {}  // для хранения выбранных танков
             });
             currentRoomCode = code;
             roomCodeDisplay.textContent = code;
             roomCodeSpan.textContent = code;
             copyBtn.style.display = 'inline-block';
             listenRoom(code);
+            // Показываем выбор танка
+            showTankSelection();
         } catch (err) {
             console.error(err);
             alert('Ошибка создания комнаты');
@@ -71,6 +108,8 @@ export function initRoom(components) {
             roomCodeSpan.textContent = code;
             copyBtn.style.display = 'inline-block';
             listenRoom(code);
+            // Показываем выбор танка
+            showTankSelection();
         } catch (err) {
             console.error(err);
             alert('Ошибка присоединения');
@@ -87,7 +126,7 @@ export function initRoom(components) {
         }
     });
 
-    async function listenRoom(code) {
+    function listenRoom(code) {
         if (roomListener) roomListener();
         const roomRef = ref(db, `rooms/${code}`);
         roomListener = onValue(roomRef, async (snap) => {
@@ -109,11 +148,18 @@ export function initRoom(components) {
                 }
             }
 
+            // Если оба игрока выбрали танки и игра ещё не началась, проверяем
             if (count === 2 && data.gameState !== null && !gameActive) {
-                loadMap(code);
-                await startGame();  // Ждём инициализацию способностей
-                listenGameState(code, currentPlayerNick);
-                if (onRoomJoined) onRoomJoined(code);
+                const tanks = data.tanks || {};
+                if (tanks[players[0]] && tanks[players[1]]) {
+                    // Уже всё готово, игра начнётся через startGame
+                } else {
+                    // Ждём выбора танков
+                    if (currentPlayerNick && !playerTank) {
+                        // Если мы ещё не выбрали, но комната готова – предложить выбор
+                        // (это уже сделано при создании/присоединении)
+                    }
+                }
             }
         });
     }
