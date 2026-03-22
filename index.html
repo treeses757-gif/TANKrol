@@ -1,87 +1,71 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Дуель супер танков</title>
-    <link rel="stylesheet" href="css/style.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-</head>
-<body>
-    <!-- Экран аутентификации -->
-    <div id="auth-screen" class="screen active">
-        <div class="auth-container">
-            <h1>Дуэль кругов</h1>
-            <div class="toggle-buttons">
-                <button id="show-login" class="toggle-btn active">Вход</button>
-                <button id="show-register" class="toggle-btn">Регистрация</button>
-            </div>
-            
-            <form id="login-form" class="auth-form active">
-                <input type="text" id="login-username" placeholder="Ваш ник" required>
-                <input type="password" id="login-password" placeholder="Пароль" required>
-                <button type="submit" class="auth-submit">Войти</button>
-                <div id="login-error" class="error-message"></div>
-            </form>
-            
-            <form id="register-form" class="auth-form">
-                <input type="text" id="register-username" placeholder="Придумайте ник" required>
-                <input type="password" id="register-password" placeholder="Пароль" required>
-                <input type="password" id="register-confirm" placeholder="Повторите пароль" required>
-                <button type="submit" class="auth-submit">Зарегистрироваться</button>
-                <div id="register-error" class="error-message"></div>
-            </form>
+<!-- Экран аутентификации -->
+<div id="auth-screen" class="screen active">
+    <div class="auth-container">
+        <h1>Дуэль кругов</h1>
+        <div class="toggle-buttons">
+            <button id="show-login" class="toggle-btn active">Вход</button>
+            <button id="show-register" class="toggle-btn">Регистрация</button>
         </div>
+        <form id="login-form" class="auth-form active">
+            <input type="text" id="login-username" placeholder="Ваш ник" required>
+            <input type="password" id="login-password" placeholder="Пароль" required>
+            <button type="submit" class="auth-submit">Войти</button>
+            <div id="login-error" class="error-message"></div>
+        </form>
+        <form id="register-form" class="auth-form">
+            <input type="text" id="register-username" placeholder="Придумайте ник" required>
+            <input type="password" id="register-password" placeholder="Пароль" required>
+            <input type="password" id="register-confirm" placeholder="Повторите пароль" required>
+            <button type="submit" class="auth-submit">Зарегистрироваться</button>
+            <div id="register-error" class="error-message"></div>
+        </form>
     </div>
+</div>
 
-    <!-- Лобби (создание/присоединение) -->
-    <div id="lobby" class="screen">
-        <div class="lobby-container">
-            <h2>Добро пожаловать, <span id="user-nick"></span>!</h2>
-            <div class="lobby-actions">
-                <button id="createBtn" class="primary-btn">Создать комнату</button>
-                <div class="join-section">
-                    <input id="roomCodeInput" type="text" inputmode="numeric" pattern="\d*" placeholder="Код (6 цифр)" maxlength="6">
-                    <button id="joinBtn" class="secondary-btn">Присоединиться</button>
-                </div>
+<!-- Лобби (создание/присоединение) -->
+<div id="lobby" class="screen">
+    <div class="lobby-container">
+        <h2>Добро пожаловать, <span id="user-nick"></span>!</h2>
+        <div class="lobby-actions">
+            <button id="createBtn" class="primary-btn">Создать комнату</button>
+            <div class="join-section">
+                <input id="roomCodeInput" type="text" inputmode="numeric" pattern="\d*" placeholder="Код (6 цифр)" maxlength="6">
+                <button id="joinBtn" class="secondary-btn">Присоединиться</button>
             </div>
-            <div class="code-container">
-                <div id="roomCodeDisplay">——</div>
-                <button id="copyBtn" style="display:none;">📋 Копировать</button>
-            </div>
-            <div id="status">Ожидание...</div>
-            <button id="logoutBtn" class="logout-btn">Выйти из аккаунта</button>
         </div>
-    </div>
-
-    <!-- Экран комнаты (ожидание) -->
-    <div id="room-lobby" class="screen">
-        <div class="room-lobby-container">
-            <h2>Комната: <span id="roomCodeRoomLobby"></span></h2>
-            <div id="players-list" class="players-list"></div>
-            <div class="room-buttons">
-                <button id="chooseTankBtn" class="primary-btn">Выбрать танк</button>
-                <button id="readyBtn" class="ready-btn">Готов</button>
-                <button id="leaveRoomBtn" class="secondary-btn">Покинуть комнату</button>
-            </div>
-            <div id="room-status" class="room-status"></div>
+        <div class="code-container">
+            <div id="roomCodeDisplay">——</div>
+            <button id="copyBtn" style="display:none;">📋 Копировать</button>
         </div>
+        <div id="status">Ожидание...</div>
+        <button id="logoutBtn" class="logout-btn">Выйти из аккаунта</button>
     </div>
+</div>
 
-    <!-- Игровой экран -->
-    <div id="game" class="screen">
-        <canvas id="gameCanvas"></canvas>
-        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span></div>
-    </div>
-
-    <!-- Экран результата -->
-    <div id="game-over" class="screen">
-        <div class="gameover-container">
-            <h2 id="gameover-message"></h2>
-            <button id="return-to-room-btn" class="primary-btn">Вернуться в комнату</button>
+<!-- Экран комнаты (ожидание) -->
+<div id="room-lobby" class="screen">
+    <div class="room-lobby-container">
+        <h2>Комната: <span id="roomCodeRoomLobby"></span></h2>
+        <div id="players-list" class="players-list"></div>
+        <div class="room-buttons">
+            <button id="chooseTankBtn" class="primary-btn">Выбрать танк</button>
+            <button id="readyBtn" class="ready-btn">Готов</button>
+            <button id="leaveRoomBtn" class="secondary-btn">Покинуть комнату</button>
         </div>
+        <div id="room-status" class="room-status"></div>
     </div>
+</div>
 
-    <script type="module" src="js/main.js"></script>
-</body>
-</html>
+<!-- Игровой экран -->
+<div id="game" class="screen">
+    <canvas id="gameCanvas"></canvas>
+    <div id="roomInfo">Комната: <span id="roomCodeSpan"></span></div>
+</div>
+
+<!-- Экран результата -->
+<div id="game-over" class="screen">
+    <div class="gameover-container">
+        <h2 id="gameover-message"></h2>
+        <button id="return-to-room-btn" class="primary-btn">Вернуться в комнату</button>
+    </div>
+</div>
