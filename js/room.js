@@ -29,7 +29,6 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Показ окна выбора танка
     async function showTankSelectionAndWait() {
         if (selectionShown) return;
         selectionShown = true;
@@ -37,16 +36,13 @@ export function initRoom(components) {
         createSelectionScreen(async (tankId) => {
             console.log('Выбран танк:', tankId);
             playerTank = tankId;
-            // Сохраняем выбор в Firebase
             await update(ref(db), {
                 [`rooms/${currentRoomCode}/tanks/${currentPlayerNick}`]: tankId
             });
-            // Проверяем, можно ли начинать игру
             await checkAndStartGame();
         });
     }
 
-    // Проверка, выбрали ли оба танки, и запуск игры
     async function checkAndStartGame() {
         if (gameStarting) return;
         console.log('checkAndStartGame вызван');
@@ -61,12 +57,10 @@ export function initRoom(components) {
         console.log('Игроки:', players);
         console.log('Выбранные танки:', tanks);
 
-        // Если в комнате два игрока и оба выбрали танки
         if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
             gameStarting = true;
             console.log('Оба выбрали танки, начинаем игру');
 
-            // Создаём gameState, если его нет
             let gameState = data.gameState;
             if (!gameState) {
                 const pos1 = { x: 100, y: 100 };
@@ -93,16 +87,15 @@ export function initRoom(components) {
         }
     }
 
-    // Проверка, нужно ли показать выбор танка текущему игроку
     async function checkShowSelection(playersCount, tanksData) {
-        console.log('checkShowSelection: playersCount=', playersCount, 'myTank=', tanksData[currentPlayerNick], 'selectionShown=', selectionShown);
+        console.log('checkShowSelection:', playersCount, tanksData[currentPlayerNick], selectionShown);
+        // Если в комнате 2 игрока, текущий ещё не выбрал танк и выбор ещё не показан
         if (playersCount === 2 && currentPlayerNick && !tanksData[currentPlayerNick] && !selectionShown) {
-            console.log('Нужно показать выбор танка');
+            console.log('Условия выполнены – показываем выбор танка');
             await showTankSelectionAndWait();
         }
     }
 
-    // Создание комнаты
     createBtn.onclick = async () => {
         if (!currentPlayerNick) { alert('Сначала войдите'); return; }
         const code = generateCode();
@@ -131,7 +124,6 @@ export function initRoom(components) {
         }
     };
 
-    // Присоединение к комнате
     joinBtn.onclick = async () => {
         if (!currentPlayerNick) { alert('Сначала войдите'); return; }
         const code = roomCodeInput.value.trim();
@@ -176,7 +168,6 @@ export function initRoom(components) {
         }
     });
 
-    // Слушатель изменений в комнате
     function listenRoom(code) {
         if (roomListener) roomListener();
         const roomRef = ref(db, `rooms/${code}`);
@@ -189,10 +180,10 @@ export function initRoom(components) {
             statusDiv.textContent = `Игроков: ${count}/2`;
             console.log(`Игроков в комнате: ${count}`);
 
-            // Показываем выбор, если нужно
+            // Проверяем, нужно ли показать выбор
             await checkShowSelection(count, data.tanks || {});
 
-            // Запускаем игру, если оба выбрали
+            // Проверяем, можно ли начинать игру
             const tanks = data.tanks || {};
             if (count === 2 && tanks[players[0]] && tanks[players[1]] && !gameActive) {
                 await checkAndStartGame();
