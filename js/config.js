@@ -13,3 +13,8 @@ export const BULLET_SPEED = 400;
 export const TANK_SIZE = 30;
 export const TANK_HALF = TANK_SIZE / 2;
 export const BULLET_RADIUS = 5;
+
+// Способности
+export const TELEPORT_DISTANCE = 200;
+export const ABILITY_RANGE = 200;
+export const BOOMERANG_RETURN_TIME = 1.0;
