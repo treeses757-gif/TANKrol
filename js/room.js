@@ -38,7 +38,8 @@ export function initRoom(components) {
             await set(roomRef, {
                 players: { [currentPlayerNick]: true },
                 gameState: null,
-                map: map
+                map: map,
+                abilities: {}  // пустой объект для способностей
             });
             currentRoomCode = code;
             roomCodeDisplay.textContent = code;
