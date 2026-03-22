@@ -10,7 +10,7 @@ export function initAuth(components) {
         showLoginBtn,
         showRegisterBtn,
         userNickSpan,
-        logoutBtn,
+        logoutAccountBtn,      // новая кнопка выхода из аккаунта
         onLoginSuccess,
         onLogout
     } = components;
@@ -106,13 +106,10 @@ export function initAuth(components) {
         }
     });
 
-    logoutBtn.addEventListener('click', () => {
+    logoutAccountBtn.addEventListener('click', () => {
         localStorage.removeItem('playerNick');
         authScreen.classList.add('active');
         lobbyScreen.classList.remove('active');
-        gameScreen.classList.remove('active');
-        document.getElementById('roomCodeDisplay').textContent = '——';
-        document.getElementById('copyBtn').style.display = 'none';
         if (onLogout) onLogout();
     });
 }
