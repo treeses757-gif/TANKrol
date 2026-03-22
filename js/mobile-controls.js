@@ -1,12 +1,11 @@
-// mobile-controls.js
 let joystickActive = false;
 let joystickDir = { x: 0, y: 0 };
 let shootCallback = null;
+let abilityCallback = null;
 
 export function initMobileControls(canvas, onShoot) {
     shootCallback = onShoot;
     
-    // Контейнер для элементов управления
     const controlsContainer = document.createElement('div');
     controlsContainer.id = 'mobile-controls';
     controlsContainer.style.position = 'absolute';
@@ -17,9 +16,8 @@ export function initMobileControls(canvas, onShoot) {
     controlsContainer.style.justifyContent = 'space-between';
     controlsContainer.style.padding = '0 20px';
     controlsContainer.style.boxSizing = 'border-box';
-    controlsContainer.style.pointerEvents = 'none'; // чтобы фон не перехватывал клики
+    controlsContainer.style.pointerEvents = 'none';
     
-    // Джойстик
     const joystick = document.createElement('div');
     joystick.id = 'joystick';
     joystick.style.width = '120px';
@@ -42,7 +40,6 @@ export function initMobileControls(canvas, onShoot) {
     joystickKnob.style.transform = 'translate(-50%, -50%)';
     joystick.appendChild(joystickKnob);
     
-    // Кнопка стрельбы
     const shootBtn = document.createElement('div');
     shootBtn.id = 'shoot-button';
     shootBtn.style.width = '100px';
@@ -59,11 +56,27 @@ export function initMobileControls(canvas, onShoot) {
     shootBtn.style.pointerEvents = 'auto';
     shootBtn.textContent = 'FIRE';
     
+    const abilityBtn = document.createElement('div');
+    abilityBtn.id = 'ability-button';
+    abilityBtn.style.width = '100px';
+    abilityBtn.style.height = '100px';
+    abilityBtn.style.borderRadius = '50%';
+    abilityBtn.style.background = 'rgba(0,255,0,0.6)';
+    abilityBtn.style.border = '2px solid white';
+    abilityBtn.style.display = 'flex';
+    abilityBtn.style.alignItems = 'center';
+    abilityBtn.style.justifyContent = 'center';
+    abilityBtn.style.color = 'white';
+    abilityBtn.style.fontSize = '20px';
+    abilityBtn.style.fontWeight = 'bold';
+    abilityBtn.style.pointerEvents = 'auto';
+    abilityBtn.textContent = 'SKILL';
+    
     controlsContainer.appendChild(joystick);
     controlsContainer.appendChild(shootBtn);
+    controlsContainer.appendChild(abilityBtn);
     document.body.appendChild(controlsContainer);
     
-    // Обработчики джойстика
     let touchId = null;
     
     const handleTouchStart = (e) => {
@@ -95,9 +108,7 @@ export function initMobileControls(canvas, onShoot) {
             joystickActive = false;
             joystickDir = { x: 0, y: 0 };
             const knob = document.getElementById('joystick-knob');
-            if (knob) {
-                knob.style.transform = 'translate(-50%, -50%)';
-            }
+            if (knob) knob.style.transform = 'translate(-50%, -50%)';
         }
     };
     
@@ -106,10 +117,14 @@ export function initMobileControls(canvas, onShoot) {
     joystick.addEventListener('touchend', handleTouchEnd);
     joystick.addEventListener('touchcancel', handleTouchEnd);
     
-    // Кнопка стрельбы
     shootBtn.addEventListener('touchstart', (e) => {
         e.preventDefault();
         if (shootCallback) shootCallback();
+    }, { passive: false });
+    
+    abilityBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (abilityCallback) abilityCallback();
     }, { passive: false });
     
     function updateJoystick(touchX, touchY, centerX, centerY) {
@@ -121,7 +136,6 @@ export function initMobileControls(canvas, onShoot) {
             dx = (dx / distance) * maxDist;
             dy = (dy / distance) * maxDist;
         }
-        // Мёртвая зона
         if (distance > 5) {
             joystickDir.x = dx / maxDist;
             joystickDir.y = dy / maxDist;
@@ -129,11 +143,8 @@ export function initMobileControls(canvas, onShoot) {
             joystickDir.x = 0;
             joystickDir.y = 0;
         }
-        
         const knob = document.getElementById('joystick-knob');
-        if (knob) {
-            knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-        }
+        if (knob) knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
     }
 }
 
@@ -144,4 +155,8 @@ export function getJoystickDirection() {
 export function removeMobileControls() {
     const controls = document.getElementById('mobile-controls');
     if (controls) controls.remove();
+}
+
+export function setActivateAbilityCallback(callback) {
+    abilityCallback = callback;
 }
