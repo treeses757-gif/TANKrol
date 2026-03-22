@@ -1,38 +1,37 @@
 import './firebase.js';
 import { initAuth } from './auth.js';
 import { initRoom } from './room.js';
-import { initGame, startGame, stopGame, setCurrentRoom, listenGameState, gameActive, returnToLobby } from './game.js';
+import { initGame, startGame, stopGame, setCurrentRoom, listenGameState, setReturnToRoomCallback } from './game.js';
 
 // Элементы DOM
 const authScreen = document.getElementById('auth-screen');
 const lobbyScreen = document.getElementById('lobby');
+const roomLobbyScreen = document.getElementById('room-lobby');
 const gameScreen = document.getElementById('game');
 const gameOverScreen = document.getElementById('game-over');
 const gameoverMessage = document.getElementById('gameover-message');
-const returnAfterGameBtn = document.getElementById('returnAfterGameBtn');  // кнопка на экране окончания игры
-const returnToLobbyBtn = document.getElementById('returnToLobbyBtn');      // кнопка во время игры
 
 const loginForm = document.getElementById('login-form');
 const registerForm = document.getElementById('register-form');
 const showLoginBtn = document.getElementById('show-login');
 const showRegisterBtn = document.getElementById('show-register');
 const userNickSpan = document.getElementById('user-nick');
-const logoutAccountBtn = document.getElementById('logoutAccountBtn');     // выход из аккаунта
+const logoutBtn = document.getElementById('logoutBtn');
 
 const createBtn = document.getElementById('createBtn');
 const joinBtn = document.getElementById('joinBtn');
 const roomCodeInput = document.getElementById('roomCodeInput');
 const roomCodeDisplay = document.getElementById('roomCodeDisplay');
-const roomCodeSpan = document.getElementById('roomCodeSpan');
 const copyBtn = document.getElementById('copyBtn');
 const statusDiv = document.getElementById('status');
-const roomInfoDiv = document.getElementById('room-info');
-const playersListDiv = document.getElementById('players-list');
-const selectTankBtn = document.getElementById('selectTankBtn');
+
+// Room lobby elements
+const roomCodeRoomLobby = document.getElementById('roomCodeRoomLobby');
+const playersList = document.getElementById('players-list');
+const chooseTankBtn = document.getElementById('chooseTankBtn');
 const readyBtn = document.getElementById('readyBtn');
-const unreadyBtn = document.getElementById('unreadyBtn');
 const leaveRoomBtn = document.getElementById('leaveRoomBtn');
-const roomStatusSpan = document.getElementById('room-status');
+const roomStatus = document.getElementById('room-status');
 
 let currentPlayerNick = localStorage.getItem('playerNick') || null;
 
@@ -42,46 +41,41 @@ if (currentPlayerNick) {
     userNickSpan.textContent = currentPlayerNick;
 }
 
-// Инициализация игры
+// Инициализация игры (без restart элементов)
 initGame({
     gameScreen,
     lobbyScreen,
     gameOverScreen,
-    gameoverMessage,
-    returnAfterGameBtn,
-    returnToLobbyBtn,
-    onReturnToLobby: () => {
-        // После возврата в лобби нужно сбросить состояние комнаты и показать интерфейс комнаты
-        if (roomHandlers.getRoomCode()) {
-            roomHandlers.resetRoomForNewGame();
-        }
-    }
+    gameoverMessage
 });
 
 const roomHandlers = initRoom({
-    createBtn,
-    joinBtn,
-    roomCodeInput,
-    roomCodeDisplay,
-    roomCodeSpan,
-    copyBtn,
-    statusDiv,
-    roomInfoDiv,
-    playersListDiv,
-    selectTankBtn,
+    lobbyScreen,
+    roomLobbyScreen,
+    roomCodeRoomLobby,
+    playersList,
+    chooseTankBtn,
     readyBtn,
-    unreadyBtn,
     leaveRoomBtn,
-    roomStatusSpan,
+    roomStatus,
     onRoomJoined: (code) => {
         setCurrentRoom(code, currentPlayerNick);
     },
     onRoomLeft: () => {
         stopGame();
         setCurrentRoom(null, null);
-        // Скрыть блок информации о комнате
-        roomInfoDiv.style.display = 'none';
-    }
+    },
+    copyBtn,
+    roomCodeDisplay
+});
+
+// Callback for returning to room after game
+setReturnToRoomCallback(() => {
+    // Show room lobby, hide game over
+    gameOverScreen.classList.remove('active');
+    roomLobbyScreen.classList.add('active');
+    // Also ensure game is stopped
+    stopGame();
 });
 
 initAuth({
@@ -92,17 +86,33 @@ initAuth({
     showLoginBtn,
     showRegisterBtn,
     userNickSpan,
-    logoutAccountBtn,
+    logoutBtn,
     onLoginSuccess: (nick) => {
         currentPlayerNick = nick;
         roomHandlers.setPlayerNick(nick);
     },
     onLogout: () => {
         currentPlayerNick = null;
-        roomHandlers.leaveRoom();   // выходим из комнаты при выходе из аккаунта
+        roomHandlers.leaveRoom();
         stopGame();
         roomHandlers.setPlayerNick(null);
     }
 });
 
 roomHandlers.setPlayerNick(currentPlayerNick);
+
+// Обработчики кнопок создания/присоединения
+createBtn.onclick = () => {
+    roomHandlers.createRoom();
+};
+joinBtn.onclick = () => {
+    const code = roomCodeInput.value.trim();
+    if (code) roomHandlers.joinRoom(code);
+    else alert('Введите код');
+};
+
+window.addEventListener('beforeunload', () => {
+    if (currentPlayerNick && roomHandlers.getRoomCode()) {
+        // Cleanup can be done by leaveRoom but we rely on Firebase
+    }
+});
