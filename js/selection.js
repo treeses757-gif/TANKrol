@@ -1,10 +1,6 @@
 import { tanks, tankList } from './tanks.js';
 
-let onConfirmCallback = null;
-
-export function createSelectionScreen(onConfirm) {
-    onConfirmCallback = onConfirm;
-    
+export function createSelectionScreen(onConfirm, currentTank = null) {
     const container = document.createElement('div');
     container.id = 'selection-screen';
     container.style.position = 'fixed';
@@ -31,7 +27,7 @@ export function createSelectionScreen(onConfirm) {
     tanksContainer.style.flexWrap = 'wrap';
     tanksContainer.style.justifyContent = 'center';
     
-    let selectedTank = null;
+    let selectedTank = currentTank;
     
     tankList.forEach(tankId => {
         const tank = tanks[tankId];
@@ -45,6 +41,11 @@ export function createSelectionScreen(onConfirm) {
         card.style.cursor = 'pointer';
         card.style.transition = 'transform 0.2s';
         card.style.border = '2px solid white';
+        
+        if (currentTank === tankId) {
+            card.style.border = '3px solid gold';
+            card.style.transform = 'scale(1.05)';
+        }
         
         card.innerHTML = `
             <div style="font-size: 48px; margin-bottom: 10px;">${tank.icon}</div>
@@ -81,34 +82,27 @@ export function createSelectionScreen(onConfirm) {
     confirmBtn.addEventListener('click', () => {
         if (selectedTank) {
             container.remove();
-            if (onConfirmCallback) onConfirmCallback(selectedTank);
+            if (onConfirm) onConfirm(selectedTank);
         } else {
             alert('Пожалуйста, выберите танк');
         }
     });
     container.appendChild(confirmBtn);
     
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Отмена';
+    cancelBtn.style.marginTop = '10px';
+    cancelBtn.style.padding = '8px 20px';
+    cancelBtn.style.fontSize = '14px';
+    cancelBtn.style.background = '#999';
+    cancelBtn.style.color = 'white';
+    cancelBtn.style.border = 'none';
+    cancelBtn.style.borderRadius = '10px';
+    cancelBtn.style.cursor = 'pointer';
+    cancelBtn.addEventListener('click', () => {
+        container.remove();
+    });
+    container.appendChild(cancelBtn);
+    
     document.body.appendChild(container);
-}
-
-export function showWaitingMessage() {
-    const container = document.createElement('div');
-    container.id = 'waiting-message';
-    container.style.position = 'fixed';
-    container.style.top = '50%';
-    container.style.left = '50%';
-    container.style.transform = 'translate(-50%, -50%)';
-    container.style.background = 'rgba(0,0,0,0.8)';
-    container.style.color = 'white';
-    container.style.padding = '20px';
-    container.style.borderRadius = '10px';
-    container.style.fontSize = '18px';
-    container.style.zIndex = '1000';
-    container.textContent = 'Ожидание выбора соперника...';
-    document.body.appendChild(container);
-}
-
-export function hideWaitingMessage() {
-    const msg = document.getElementById('waiting-message');
-    if (msg) msg.remove();
 }
