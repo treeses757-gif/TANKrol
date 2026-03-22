@@ -49,6 +49,7 @@ let mobileControlsActive = false;
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl;
 let returnAfterGameBtn, returnToLobbyBtn;
 let onReturnToLobbyCallback;
+let gameRoomCodeSpan;
 
 // Функции отрисовки танков
 function drawTank(x, y, tankId, direction, isPhantom = false) {
@@ -134,6 +135,7 @@ export function initGame(components) {
 
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
+    gameRoomCodeSpan = document.getElementById('gameRoomCode');
 
     useCamera = !isMobile;
 
@@ -280,6 +282,9 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
     spiderActive = false;
     lastAbilityTime = 0;
 
+    // Показываем код комнаты на игровом экране
+    if (gameRoomCodeSpan) gameRoomCodeSpan.textContent = roomCode;
+
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
         setActivateAbilityCallback(() => activateTankAbility());
@@ -359,17 +364,6 @@ export function listenGameState(code, playerNick) {
                 showGameOver('Вы победили!');
             } else {
                 showGameOver('Вы проиграли!');
-            }
-        }
-
-        // Рестарт больше не используется, но оставим для совместимости
-        if (state.restart) {
-            const players = Object.keys(state).filter(k => k !== 'bullets' && k !== 'restart' && k !== 'winner' && k !== 'abilityActivation');
-            if (players.length === 2) {
-                const bothReady = state.restart[players[0]] && state.restart[players[1]];
-                if (bothReady) {
-                    restartGame();
-                }
             }
         }
     });
