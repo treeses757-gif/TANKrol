@@ -33,7 +33,7 @@ let boomerangTimer = 0;
 
 // Кулдауны
 let lastAbilityTime = 0;
-const ABILITY_COOLDOWN = 8; // секунд
+const ABILITY_COOLDOWN = 25; // секунд
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
