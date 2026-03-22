@@ -47,11 +47,9 @@ const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/
 let mobileControlsActive = false;
 
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl;
-let returnAfterGameBtn, returnToLobbyBtn;
-let onReturnToLobbyCallback;
-let gameRoomCodeSpan;
+let returnToRoomCallback = null; // callback to show room lobby
 
-// Функции отрисовки танков
+// Функции отрисовки танков с уникальной формой
 function drawTank(x, y, tankId, direction, isPhantom = false) {
     const tank = tanks[tankId];
     if (!tank) return;
@@ -129,13 +127,9 @@ export function initGame(components) {
     gameScreenEl = components.gameScreen;
     gameOverScreenEl = components.gameOverScreen;
     gameoverMessageEl = components.gameoverMessage;
-    returnAfterGameBtn = components.returnAfterGameBtn;
-    returnToLobbyBtn = components.returnToLobbyBtn;
-    onReturnToLobbyCallback = components.onReturnToLobby;
 
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
-    gameRoomCodeSpan = document.getElementById('gameRoomCode');
 
     useCamera = !isMobile;
 
@@ -162,14 +156,11 @@ export function initGame(components) {
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    if (returnAfterGameBtn) {
-        returnAfterGameBtn.addEventListener('click', () => {
-            returnToLobby();
-        });
-    }
-    if (returnToLobbyBtn) {
-        returnToLobbyBtn.addEventListener('click', () => {
-            returnToLobby();
+    // Кнопка возврата в комнату
+    const returnBtn = document.getElementById('return-to-room-btn');
+    if (returnBtn) {
+        returnBtn.addEventListener('click', () => {
+            returnToRoom();
         });
     }
 }
@@ -282,9 +273,6 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
     spiderActive = false;
     lastAbilityTime = 0;
 
-    // Показываем код комнаты на игровом экране
-    if (gameRoomCodeSpan) gameRoomCodeSpan.textContent = roomCode;
-
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
         setActivateAbilityCallback(() => activateTankAbility());
@@ -369,49 +357,40 @@ export function listenGameState(code, playerNick) {
     });
 }
 
-async function restartGame() {
-    if (!currentRoomCode) return;
-    const roomRef = ref(db, `rooms/${currentRoomCode}`);
-    const snap = await get(roomRef);
-    const data = snap.val();
-    const players = Object.keys(data.players || {});
-    if (players.length !== 2) return;
-
-    const pos1 = { x: 100, y: 100 };
-    const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
-    const myNewPos = players[0] === currentPlayerNick ? pos1 : pos2;
-    const enemyNewPos = players[0] === currentPlayerNick ? pos2 : pos1;
-
-    myPos = myNewPos;
-    enemyPos = enemyNewPos;
-    myBullets = [];
-    enemyBullets = [];
-    boomerangBullets = [];
-    lastShootTime = 0;
-    winner = null;
-    gameActive = true;
-    phantomActive = false;
-    reflectActive = false;
-    spiderActive = false;
-
-    const newGameState = {
-        [players[0]]: pos1,
-        [players[1]]: pos2,
-        bullets: null,
-        winner: null,
-        restart: { [players[0]]: false, [players[1]]: false }
-    };
-    await set(ref(db, `rooms/${currentRoomCode}/gameState`), newGameState);
-
-    gameScreenEl.classList.add('active');
-    gameOverScreenEl.classList.remove('active');
-}
-
 export function loadMap(roomCode) {
     onValue(ref(db, `rooms/${roomCode}/map`), (snap) => {
         obstacles = snap.val() || [];
         console.log('Map loaded:', obstacles.length, 'obstacles');
     }, { onlyOnce: true });
+}
+
+export function setReturnToRoomCallback(callback) {
+    returnToRoomCallback = callback;
+}
+
+export async function returnToRoom() {
+    if (!currentRoomCode || !currentPlayerNick) return;
+
+    gameActive = false;
+    myBullets = [];
+    enemyBullets = [];
+    boomerangBullets = [];
+    phantomActive = false;
+    reflectActive = false;
+    spiderActive = false;
+
+    // Сбрасываем готовность и игровое состояние в Firebase
+    const playersSnap = await get(ref(db, `rooms/${currentRoomCode}/players`));
+    const players = playersSnap.val() || {};
+    const updates = {};
+    for (let nick in players) {
+        updates[`rooms/${currentRoomCode}/ready/${nick}`] = false;
+    }
+    updates[`rooms/${currentRoomCode}/gameState`] = null;
+    await update(ref(db), updates);
+
+    // Показываем лобби комнаты (вызываем callback из main.js)
+    if (returnToRoomCallback) returnToRoomCallback();
 }
 
 function updateCamera() {
@@ -715,12 +694,4 @@ function draw() {
         ctx.lineWidth = 2;
         ctx.stroke();
     }
-}
-
-export function returnToLobby() {
-    gameActive = false;
-    gameScreenEl.classList.remove('active');
-    gameOverScreenEl.classList.remove('active');
-    lobbyScreenEl.classList.add('active');
-    if (onReturnToLobbyCallback) onReturnToLobbyCallback();
 }
