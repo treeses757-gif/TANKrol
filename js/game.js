@@ -4,7 +4,6 @@ import { isPositionFree, circleRectCollide } from './utils.js';
 import { initMobileControls, getJoystickDirection, removeMobileControls, setActivateAbilityCallback } from './mobile-controls.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_SIZE, TANK_HALF, BULLET_RADIUS } from './config.js';
 import { tanks } from './tanks.js';
-import { initSimpleAbilities, activateSimpleAbility, hasActiveEffect, updateEffects, getPhantomPosition } from './abilities-simple.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
@@ -23,14 +22,18 @@ let lastTimestamp = 0;
 let winner = null;
 let myTank = null;
 let enemyTank = null;
-let myAbilityCooldown = 0;
-const ABILITY_COOLDOWN = 5; // секунд
-let lastAbilityTime = 0;
 
-// Для эффектов
-let boomerangBullets = [];
-let phantomImage = null;
-let reflectActive = false;
+// Эффекты способностей
+let phantomActive = false;          // активна ли способность Призрака
+let phantomData = null;             // { startPos, path, lastShoot }
+let reflectActive = false;          // активен ли щит
+let spiderActive = false;           // активен ли танк-паук
+let boomerangBullets = [];          // снаряды-бумеранги
+let boomerangTimer = 0;
+
+// Кулдауны
+let lastAbilityTime = 0;
+const ABILITY_COOLDOWN = 8; // секунд
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
@@ -44,6 +47,58 @@ const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/
 let mobileControlsActive = false;
 
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, restartBtnEl, restartStatusEl;
+
+// Функции отрисовки танков с уникальной формой
+function drawTank(x, y, tankId, direction, isPhantom = false) {
+    const tank = tanks[tankId];
+    if (!tank) return;
+    
+    const sx = toScreenX(x);
+    const sy = toScreenY(y);
+    const scaleX = getScaleX();
+    const scaleY = getScaleY();
+    
+    if (isPhantom) ctx.globalAlpha = 0.5;
+    
+    // Корпус
+    const bodyW = tank.body.width * scaleX;
+    const bodyH = tank.body.height * scaleY;
+    const bodyX = sx - bodyW/2;
+    const bodyY = sy - bodyH/2 + tank.body.offsetY * scaleY;
+    ctx.fillStyle = tank.color;
+    ctx.fillRect(bodyX, bodyY, bodyW, bodyH);
+    
+    // Гусеницы
+    ctx.fillStyle = '#333';
+    const trackW = tank.tracks.width * scaleX;
+    const trackH = tank.tracks.height * scaleY;
+    const trackX = sx - trackW/2;
+    const trackY = sy - trackH/2 + tank.tracks.offsetY * scaleY;
+    ctx.fillRect(trackX, trackY, trackW, trackH);
+    ctx.fillRect(trackX, trackY - trackH*2, trackW, trackH);
+    
+    // Башня
+    const turretR = tank.turret.radius * scaleX;
+    ctx.fillStyle = tank.color;
+    ctx.beginPath();
+    ctx.arc(sx, sy + tank.turret.offsetY * scaleY, turretR, 0, 2*Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2 * scaleX;
+    ctx.stroke();
+    
+    // Пушка
+    const gunLen = tank.gun.length * scaleX;
+    const gunW = tank.gun.width * scaleX;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy + tank.turret.offsetY * scaleY);
+    ctx.lineTo(sx + direction.x * gunLen, sy + tank.turret.offsetY * scaleY + direction.y * gunLen);
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = gunW;
+    ctx.stroke();
+    
+    if (isPhantom) ctx.globalAlpha = 1;
+}
 
 function toScreenX(vx) {
     if (useCamera) {
@@ -148,25 +203,59 @@ async function activateTankAbility() {
     if (now - lastAbilityTime < ABILITY_COOLDOWN) return;
     lastAbilityTime = now;
     
-    const abilityCallbacks = {
-        onPhantom: (pos) => {
-            phantomImage = { pos: { ...pos }, timer: 8 };
-        },
-        onBoomerang: (pos, dir) => {
-            const bullet = {
-                x: pos.x,
-                y: pos.y,
-                vx: dir.x * BULLET_SPEED,
-                vy: dir.y * BULLET_SPEED,
+    const tankId = myTank;
+    if (!tankId) return;
+    
+    switch (tankId) {
+        case 'phantom':
+            // Активируем фантомный след: запоминаем начальную позицию и направление
+            phantomActive = true;
+            phantomData = {
+                startPos: { ...myPos },
+                path: [{ ...myPos, dir: { ...lastMoveDir } }],
+                lastShoot: 0
+            };
+            // Через 8 секунд деактивировать
+            setTimeout(() => { phantomActive = false; }, 8000);
+            break;
+        case 'guardian':
+            reflectActive = true;
+            setTimeout(() => { reflectActive = false; }, 4000);
+            break;
+        case 'spider':
+            spiderActive = true;
+            setTimeout(() => { spiderActive = false; }, 5000);
+            break;
+        case 'boomer':
+            // Создаём бумеранг
+            const bulletKey = Date.now() + '_boomer';
+            const boomerang = {
+                x: myPos.x,
+                y: myPos.y,
+                vx: lastMoveDir.x * BULLET_SPEED,
+                vy: lastMoveDir.y * BULLET_SPEED,
                 owner: currentPlayerNick,
-                key: 'boomerang_' + Date.now(),
-                isBoomerang: true,
+                key: bulletKey,
                 returnTimer: 0
             };
-            boomerangBullets.push(bullet);
+            boomerangBullets.push(boomerang);
+            break;
+    }
+    
+    // Синхронизируем активацию с противником (чтобы он видел эффекты)
+    await update(ref(db), {
+        [`rooms/${currentRoomCode}/gameState/abilityActivation`]: {
+            player: currentPlayerNick,
+            ability: tankId,
+            timestamp: now
         }
-    };
-    activateSimpleAbility(myPos, lastMoveDir, myTank, abilityCallbacks);
+    });
+}
+
+export function setTanks(myNick, myTankId, enemyNickParam, enemyTankId) {
+    myTank = myTankId;
+    enemyNick = enemyNickParam;
+    enemyTank = enemyTankId;
 }
 
 export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
@@ -187,14 +276,10 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
     lastTimestamp = 0;
     winner = null;
     lastShootTime = 0;
-    myAbilityCooldown = 0;
-    lastAbilityTime = 0;
+    phantomActive = false;
     reflectActive = false;
-    phantomImage = null;
-
-    myTank = tankId;
-    enemyTank = enemyTankId;
-    initSimpleAbilities(tankId, enemyTankId);
+    spiderActive = false;
+    lastAbilityTime = 0;
 
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
@@ -234,11 +319,10 @@ export function listenGameState(code, playerNick) {
         if (!state) return;
 
         for (let id in state) {
-            if (id === 'bullets' || id === 'restart' || id === 'winner') continue;
+            if (id === 'bullets' || id === 'restart' || id === 'winner' || id === 'abilityActivation') continue;
             if (id === playerNick) myPos = state[id];
-            else if (id !== 'bullets' && id !== 'restart' && id !== 'winner') {
+            else if (id !== 'bullets' && id !== 'restart' && id !== 'winner' && id !== 'abilityActivation') {
                 enemyPos = state[id];
-                enemyNick = id;
             }
         }
 
@@ -258,6 +342,21 @@ export function listenGameState(code, playerNick) {
             enemyBullets = [];
         }
 
+        if (state.abilityActivation && state.abilityActivation.player !== playerNick) {
+            // Противник активировал способность – применяем визуальный эффект
+            const ability = state.abilityActivation.ability;
+            const now = Date.now() / 1000;
+            if (ability === 'guardian') {
+                reflectActive = true;
+                setTimeout(() => { reflectActive = false; }, 4000);
+            } else if (ability === 'spider') {
+                spiderActive = true;
+                setTimeout(() => { spiderActive = false; }, 5000);
+            }
+            // Удаляем запись, чтобы не применять повторно
+            update(ref(db), { [`rooms/${code}/gameState/abilityActivation`]: null });
+        }
+
         if (state.winner) {
             winner = state.winner;
             if (!gameActive) return;
@@ -269,7 +368,7 @@ export function listenGameState(code, playerNick) {
         }
 
         if (state.restart) {
-            const players = Object.keys(state).filter(k => k !== 'bullets' && k !== 'restart' && k !== 'winner');
+            const players = Object.keys(state).filter(k => k !== 'bullets' && k !== 'restart' && k !== 'winner' && k !== 'abilityActivation');
             if (players.length === 2) {
                 const bothReady = state.restart[players[0]] && state.restart[players[1]];
                 if (bothReady) {
@@ -301,6 +400,9 @@ async function restartGame() {
     lastShootTime = 0;
     winner = null;
     gameActive = true;
+    phantomActive = false;
+    reflectActive = false;
+    spiderActive = false;
 
     const newGameState = {
         [players[0]]: pos1,
@@ -346,9 +448,8 @@ function gameLoop(timestamp) {
 
     updateGame(deltaTime);
     updateBullets(deltaTime);
-    updateBoomerangs(deltaTime);
-    updateEffects();
     updatePhantom(deltaTime);
+    updateBoomerangs(deltaTime);
     updateCamera();
     updateEnemyTurret();
     draw();
@@ -376,22 +477,24 @@ function updateGame(deltaTime) {
         }
     }
 
-    // Эффект танка-паука: игнорируем препятствия
-    let canMove = true;
-    if (hasActiveEffect('spider')) {
-        canMove = true;
-    } else {
+    // Проверка препятствий (если активен паук – игнорируем)
+    if (!spiderActive) {
         newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
         newY = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY));
-        canMove = isPositionFree(newX, newY, TANK_HALF, obstacles);
+        if (!isPositionFree(newX, newY, TANK_HALF, obstacles)) {
+            // Не двигаемся
+            return;
+        }
+    } else {
+        // Паук – просто ограничиваем границами
+        newX = Math.max(0, Math.min(VIRTUAL_WIDTH, newX));
+        newY = Math.max(0, Math.min(VIRTUAL_HEIGHT, newY));
     }
 
-    if (canMove) {
-        if (newX !== myPos.x || newY !== myPos.y) {
-            myPos.x = newX;
-            myPos.y = newY;
-            update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
-        }
+    if (newX !== myPos.x || newY !== myPos.y) {
+        myPos.x = newX;
+        myPos.y = newY;
+        update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
     }
 }
 
@@ -407,23 +510,19 @@ function updateBullets(deltaTime) {
         b.y += b.vy * deltaTime;
     }
 
-    // Отражающий щит: если активен, вражеские пули отражаются
-    const reflectActive = hasActiveEffect('reflect');
-    for (let i = enemyBullets.length - 1; i >= 0; i--) {
-        const b = enemyBullets[i];
-        if (reflectActive) {
+    // Отражение щита
+    if (reflectActive) {
+        for (let i = enemyBullets.length - 1; i >= 0; i--) {
+            const b = enemyBullets[i];
             const dx = b.x - myPos.x;
             const dy = b.y - myPos.y;
             if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
-                // Отражаем пулю
+                // Отражаем
                 b.vx = -b.vx;
                 b.vy = -b.vy;
-                b.owner = currentPlayerNick; // меняем владельца для отрисовки
-                // Пуля становится "своей" для нас, но мы не добавляем её в myBullets, просто меняем направление
-                // Удаляем из enemyBullets и добавляем в myBullets
+                b.owner = currentPlayerNick;
                 enemyBullets.splice(i, 1);
                 myBullets.push(b);
-                continue;
             }
         }
     }
@@ -457,7 +556,7 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Вражеские пули (без отражения)
+    // Вражеские пули
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         let hit = false;
@@ -483,6 +582,30 @@ function updateBullets(deltaTime) {
     }
 }
 
+function updatePhantom(deltaTime) {
+    if (!phantomActive) return;
+    // Запоминаем путь
+    if (!phantomData) return;
+    phantomData.path.push({ ...myPos, dir: { ...lastMoveDir } });
+    if (phantomData.path.length > 100) phantomData.path.shift();
+    
+    // Фантом стреляет каждые 2 секунды
+    const now = Date.now() / 1000;
+    if (now - phantomData.lastShoot > 2 && phantomData.path.length > 0) {
+        const lastPos = phantomData.path[phantomData.path.length - 1];
+        const bullet = {
+            x: lastPos.x,
+            y: lastPos.y,
+            vx: lastPos.dir.x * BULLET_SPEED,
+            vy: lastPos.dir.y * BULLET_SPEED,
+            owner: currentPlayerNick + '_phantom',
+            key: 'phantom_' + Date.now()
+        };
+        myBullets.push(bullet);
+        phantomData.lastShoot = now;
+    }
+}
+
 function updateBoomerangs(deltaTime) {
     for (let i = 0; i < boomerangBullets.length; i++) {
         const b = boomerangBullets[i];
@@ -501,26 +624,19 @@ function updateBoomerangs(deltaTime) {
             b.x += b.vx * deltaTime;
             b.y += b.vy * deltaTime;
         }
-        const dxE = b.x - enemyPos.x;
-        const dyE = b.y - enemyPos.y;
-        if (dxE * dxE + dyE * dyE < (TANK_HALF + BULLET_RADIUS) ** 2) {
+        // Проверка попадания во врага
+        const dx = b.x - enemyPos.x;
+        const dy = b.y - enemyPos.y;
+        if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
             update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick });
             gameActive = false;
             boomerangBullets.splice(i, 1);
             return;
         }
+        // Удаление, если улетел далеко
         if (b.x < -500 || b.x > VIRTUAL_WIDTH + 500 || b.y < -500 || b.y > VIRTUAL_HEIGHT + 500) {
             boomerangBullets.splice(i, 1);
             i--;
-        }
-    }
-}
-
-function updatePhantom(deltaTime) {
-    if (phantomImage) {
-        phantomImage.timer -= deltaTime;
-        if (phantomImage.timer <= 0) {
-            phantomImage = null;
         }
     }
 }
@@ -536,53 +652,13 @@ function updateEnemyTurret() {
     }
 }
 
-function drawTank(x, y, color, direction, isPhantom = false) {
-    const sx = toScreenX(x);
-    const sy = toScreenY(y);
-    const scaleX = getScaleX();
-    const scaleY = getScaleY();
-    const w = TANK_SIZE * scaleX;
-    const h = TANK_SIZE * scaleY;
-    const left = sx - w/2;
-    const top = sy - h/2;
-
-    if (isPhantom) {
-        ctx.globalAlpha = 0.5;
-    }
-    ctx.fillStyle = color;
-    ctx.fillRect(left, top, w, h);
-
-    ctx.fillStyle = '#333';
-    const trackHeight = 5 * scaleY;
-    ctx.fillRect(left, top, w, trackHeight);
-    ctx.fillRect(left, top + h - trackHeight, w, trackHeight);
-
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(sx, sy, w * 0.3, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = 2 * scaleX;
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.lineTo(sx + direction.x * w * 0.6, sy + direction.y * w * 0.6);
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = 4 * scaleX;
-    ctx.stroke();
-    
-    if (isPhantom) {
-        ctx.globalAlpha = 1;
-    }
-}
-
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const scaleX = getScaleX();
     const scaleY = getScaleY();
 
+    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         const sx = toScreenX(obs.x);
@@ -592,11 +668,7 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
-    // Фантом (копия)
-    if (phantomImage) {
-        drawTank(phantomImage.pos.x, phantomImage.pos.y, '#AAAAAA', lastMoveDir, true);
-    }
-
+    // Пули
     const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -632,12 +704,18 @@ function draw() {
     }
     ctx.shadowBlur = 0;
 
-    // Вражеский танк
-    const enemyTankColor = tanks[enemyTank]?.color || '#E53935';
-    drawTank(enemyPos.x, enemyPos.y, enemyTankColor, enemyTurretDir);
-    // Свой танк
-    const myTankColor = tanks[myTank]?.color || '#1E88E5';
-    drawTank(myPos.x, myPos.y, myTankColor, lastMoveDir);
+    // Фантомная копия (рисуем последние 10 позиций)
+    if (phantomActive && phantomData && phantomData.path.length > 0) {
+        const steps = Math.min(10, phantomData.path.length);
+        for (let i = 0; i < steps; i++) {
+            const p = phantomData.path[phantomData.path.length - 1 - i];
+            if (p) drawTank(p.x, p.y, myTank, p.dir, true);
+        }
+    }
+
+    // Танки
+    drawTank(enemyPos.x, enemyPos.y, enemyTank, enemyTurretDir);
+    drawTank(myPos.x, myPos.y, myTank, lastMoveDir);
 
     // Интерфейс способности
     const now = Date.now() / 1000;
@@ -657,7 +735,6 @@ function draw() {
             ctx.fillText('Готово (E)', canvas.width - 200, 80);
         }
 
-        // Индикатор в углу
         const indicatorX = canvas.width - 20;
         const indicatorY = 20;
         ctx.beginPath();
