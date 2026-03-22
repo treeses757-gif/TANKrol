@@ -23,7 +23,6 @@ let winner = null;
 let abilityCooldown = 0;
 let myAbilityInfo = null;
 
-// Дополнительные объекты для способностей
 let teleportRequest = null;
 let boomerangBullets = [];
 let temporaryWalls = [];
@@ -162,13 +161,11 @@ export async function startGame() {
     temporaryWalls = [];
     drones = [];
 
-    // Инициализация способностей
     if (currentRoomCode && currentPlayerNick) {
         await initAbilities(currentRoomCode, currentPlayerNick);
         myAbilityInfo = getMyAbility();
         listenAbilities();
 
-        // Устанавливаем колбэки для способностей
         setAbilityCallbacks({
             teleport: (pos, dir) => { teleportRequest = { pos, dir }; },
             boomerang: (pos, dir) => {
@@ -192,7 +189,6 @@ export async function startGame() {
                 }
             },
             wall: (pos, dir) => {
-                // Создаём временную стену из трёх блоков перед танком
                 const wallX = pos.x + dir.x * TANK_SIZE;
                 const wallY = pos.y + dir.y * TANK_SIZE;
                 for (let i = -1; i <= 1; i++) {
@@ -206,7 +202,6 @@ export async function startGame() {
                 }
             },
             drone: (pos) => {
-                // Создаём 3 дрона вокруг танка
                 for (let i = 0; i < 3; i++) {
                     drones.push({
                         x: pos.x + (i - 1) * 30,
@@ -217,8 +212,6 @@ export async function startGame() {
                 }
             },
             mine: (pos) => {
-                // Гравитационная мина – будет применяться в updateBullets
-                // Для простоты оставим заглушку
                 console.log('Мина поставлена');
             }
         });
@@ -409,7 +402,6 @@ function updateGame(deltaTime) {
         }
     }
 
-    // Телепорт
     if (teleportRequest) {
         const dir = teleportRequest.dir;
         let newX_tele = teleportRequest.pos.x + dir.x * TELEPORT_DISTANCE;
@@ -447,7 +439,6 @@ function updateBullets(deltaTime) {
         b.y += b.vy * deltaTime;
     }
 
-    // Свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
@@ -476,7 +467,6 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Вражеские пули
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         let hit = false;
@@ -510,7 +500,6 @@ function updateBoomerangs(deltaTime) {
             b.x += b.vx * deltaTime;
             b.y += b.vy * deltaTime;
         } else {
-            // Возврат
             const dx = myPos.x - b.x;
             const dy = myPos.y - b.y;
             const len = Math.hypot(dx, dy);
@@ -521,7 +510,6 @@ function updateBoomerangs(deltaTime) {
             b.x += b.vx * deltaTime;
             b.y += b.vy * deltaTime;
         }
-        // Проверка попадания во врага
         const dxE = b.x - enemyPos.x;
         const dyE = b.y - enemyPos.y;
         if (dxE * dxE + dyE * dyE < (TANK_HALF + BULLET_RADIUS) ** 2) {
@@ -530,7 +518,6 @@ function updateBoomerangs(deltaTime) {
             boomerangBullets.splice(i, 1);
             return;
         }
-        // Удаление, если далеко
         if (b.x < -500 || b.x > VIRTUAL_WIDTH + 500 || b.y < -500 || b.y > VIRTUAL_HEIGHT + 500) {
             boomerangBullets.splice(i, 1);
             i--;
@@ -556,7 +543,6 @@ function updateDrones(deltaTime) {
             i--;
             continue;
         }
-        // Дроны вращаются вокруг танка
         drones[i].angle += 3 * deltaTime;
         const radius = 40;
         drones[i].x = myPos.x + Math.cos(drones[i].angle) * radius;
@@ -624,7 +610,6 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
-    // Временные стены
     ctx.fillStyle = '#AAAAAA';
     temporaryWalls.forEach(wall => {
         const sx = toScreenX(wall.x);
@@ -634,7 +619,6 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
-    // Дроны
     ctx.fillStyle = '#00FF00';
     drones.forEach(drone => {
         const sx = toScreenX(drone.x);
@@ -644,7 +628,6 @@ function draw() {
         ctx.fill();
     });
 
-    // Пули
     const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -683,7 +666,7 @@ function draw() {
     drawTank(enemyPos.x, enemyPos.y, '#E53935', enemyTurretDir);
     drawTank(myPos.x, myPos.y, '#1E88E5', lastMoveDir);
 
-    // Интерфейс способности
+    // Интерфейс способности и индикатор готовности
     if (myAbilityInfo) {
         ctx.font = '16px Arial';
         ctx.fillStyle = 'white';
@@ -696,5 +679,20 @@ function draw() {
             ctx.fillStyle = 'lightgreen';
             ctx.fillText('Готово (E)', canvas.width - 200, 55);
         }
+
+        // Маленькая цветная точка в правом верхнем углу
+        const indicatorX = canvas.width - 20;
+        const indicatorY = 20;
+        ctx.beginPath();
+        ctx.arc(indicatorX, indicatorY, 8, 0, 2 * Math.PI);
+        if (abilityCooldown <= 0) {
+            ctx.fillStyle = '#00ff00'; // зелёная – готова
+        } else {
+            ctx.fillStyle = '#ff5500'; // оранжевая – на кулдауне
+        }
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
     }
 }
