@@ -3,7 +3,7 @@ import { ref, onValue, update, get, remove } from 'https://www.gstatic.com/fireb
 import { isPositionFree, circleRectCollide } from './utils.js';
 import { initMobileControls, getJoystickDirection, removeMobileControls, setActivateAbilityCallback } from './mobile-controls.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_SIZE, TANK_HALF, BULLET_RADIUS, TELEPORT_DISTANCE } from './config.js';
-import { initAbilities, activateAbility, getMyAbility, getCooldown, updateEffects, updateCooldown, getActiveEffects, listenAbilities } from './abilityManager.js';
+import { initAbilities, activateAbility, getMyAbility, getCooldown, updateEffects, updateCooldown, getActiveEffects, listenAbilities, setAbilityCallbacks } from './abilityManager.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
@@ -22,9 +22,12 @@ let lastTimestamp = 0;
 let winner = null;
 let abilityCooldown = 0;
 let myAbilityInfo = null;
+
+// Дополнительные объекты для способностей
 let teleportRequest = null;
-let boomerangRequest = null;
-let rewindRequest = null;
+let boomerangBullets = [];
+let temporaryWalls = [];
+let drones = [];
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
@@ -155,12 +158,70 @@ export async function startGame() {
     lastTimestamp = 0;
     winner = null;
     lastShootTime = 0;
+    boomerangBullets = [];
+    temporaryWalls = [];
+    drones = [];
 
     // Инициализация способностей
     if (currentRoomCode && currentPlayerNick) {
         await initAbilities(currentRoomCode, currentPlayerNick);
         myAbilityInfo = getMyAbility();
         listenAbilities();
+
+        // Устанавливаем колбэки для способностей
+        setAbilityCallbacks({
+            teleport: (pos, dir) => { teleportRequest = { pos, dir }; },
+            boomerang: (pos, dir) => {
+                const bulletKey = Date.now() + '_boomerang';
+                const bullet = {
+                    x: pos.x,
+                    y: pos.y,
+                    vx: dir.x * BULLET_SPEED,
+                    vy: dir.y * BULLET_SPEED,
+                    owner: currentPlayerNick,
+                    key: bulletKey,
+                    isBoomerang: true,
+                    returnTimer: 0
+                };
+                boomerangBullets.push(bullet);
+            },
+            rewind: (state) => {
+                if (state) {
+                    myPos.x = state.pos.x;
+                    myPos.y = state.pos.y;
+                }
+            },
+            wall: (pos, dir) => {
+                // Создаём временную стену из трёх блоков перед танком
+                const wallX = pos.x + dir.x * TANK_SIZE;
+                const wallY = pos.y + dir.y * TANK_SIZE;
+                for (let i = -1; i <= 1; i++) {
+                    temporaryWalls.push({
+                        x: wallX + i * TANK_SIZE,
+                        y: wallY,
+                        width: TANK_SIZE,
+                        height: TANK_SIZE,
+                        timer: 6.0
+                    });
+                }
+            },
+            drone: (pos) => {
+                // Создаём 3 дрона вокруг танка
+                for (let i = 0; i < 3; i++) {
+                    drones.push({
+                        x: pos.x + (i - 1) * 30,
+                        y: pos.y - 40,
+                        angle: i * Math.PI * 2 / 3,
+                        timer: 10.0
+                    });
+                }
+            },
+            mine: (pos) => {
+                // Гравитационная мина – будет применяться в updateBullets
+                // Для простоты оставим заглушку
+                console.log('Мина поставлена');
+            }
+        });
     }
 
     if (isMobile && !document.getElementById('mobile-controls')) {
@@ -264,6 +325,9 @@ async function restartGame() {
     enemyPos = enemyNewPos;
     myBullets = [];
     enemyBullets = [];
+    boomerangBullets = [];
+    temporaryWalls = [];
+    drones = [];
     lastShootTime = 0;
     winner = null;
     gameActive = true;
@@ -312,11 +376,14 @@ function gameLoop(timestamp) {
 
     updateGame(deltaTime);
     updateBullets(deltaTime);
+    updateBoomerangs(deltaTime);
+    updateTemporaryWalls(deltaTime);
+    updateDrones(deltaTime);
     updateCamera();
     updateEnemyTurret();
     updateCooldown(deltaTime);
     abilityCooldown = getCooldown();
-    updateEffects(deltaTime, myPos, enemyPos, obstacles, canvas);
+    updateEffects(deltaTime, myPos, enemyPos, obstacles, canvas, enemyNick);
     draw();
     requestAnimationFrame(gameLoop);
 }
@@ -342,7 +409,7 @@ function updateGame(deltaTime) {
         }
     }
 
-    // Телепорт (если запрошен)
+    // Телепорт
     if (teleportRequest) {
         const dir = teleportRequest.dir;
         let newX_tele = teleportRequest.pos.x + dir.x * TELEPORT_DISTANCE;
@@ -354,13 +421,6 @@ function updateGame(deltaTime) {
             newY = newY_tele;
         }
         teleportRequest = null;
-    }
-
-    // Откат времени
-    if (rewindRequest) {
-        newX = rewindRequest.pos.x;
-        newY = rewindRequest.pos.y;
-        rewindRequest = null;
     }
 
     newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
@@ -378,18 +438,16 @@ function updateGame(deltaTime) {
 function updateBullets(deltaTime) {
     if (winner) return;
 
-    // Движение своих пуль
     for (let b of myBullets) {
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
     }
-    // Движение вражеских пуль
     for (let b of enemyBullets) {
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
     }
 
-    // Проверка своих пуль
+    // Свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
@@ -418,7 +476,7 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Проверка вражеских пуль
+    // Вражеские пули
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         let hit = false;
@@ -441,6 +499,68 @@ function updateBullets(deltaTime) {
             gameActive = false;
             return;
         }
+    }
+}
+
+function updateBoomerangs(deltaTime) {
+    for (let i = 0; i < boomerangBullets.length; i++) {
+        const b = boomerangBullets[i];
+        b.returnTimer += deltaTime;
+        if (b.returnTimer < 1.0) {
+            b.x += b.vx * deltaTime;
+            b.y += b.vy * deltaTime;
+        } else {
+            // Возврат
+            const dx = myPos.x - b.x;
+            const dy = myPos.y - b.y;
+            const len = Math.hypot(dx, dy);
+            if (len > 0.01) {
+                b.vx = (dx / len) * BULLET_SPEED;
+                b.vy = (dy / len) * BULLET_SPEED;
+            }
+            b.x += b.vx * deltaTime;
+            b.y += b.vy * deltaTime;
+        }
+        // Проверка попадания во врага
+        const dxE = b.x - enemyPos.x;
+        const dyE = b.y - enemyPos.y;
+        if (dxE * dxE + dyE * dyE < (TANK_HALF + BULLET_RADIUS) ** 2) {
+            update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick });
+            gameActive = false;
+            boomerangBullets.splice(i, 1);
+            return;
+        }
+        // Удаление, если далеко
+        if (b.x < -500 || b.x > VIRTUAL_WIDTH + 500 || b.y < -500 || b.y > VIRTUAL_HEIGHT + 500) {
+            boomerangBullets.splice(i, 1);
+            i--;
+        }
+    }
+}
+
+function updateTemporaryWalls(deltaTime) {
+    for (let i = 0; i < temporaryWalls.length; i++) {
+        temporaryWalls[i].timer -= deltaTime;
+        if (temporaryWalls[i].timer <= 0) {
+            temporaryWalls.splice(i, 1);
+            i--;
+        }
+    }
+}
+
+function updateDrones(deltaTime) {
+    for (let i = 0; i < drones.length; i++) {
+        drones[i].timer -= deltaTime;
+        if (drones[i].timer <= 0) {
+            drones.splice(i, 1);
+            i--;
+            continue;
+        }
+        // Дроны вращаются вокруг танка
+        drones[i].angle += 3 * deltaTime;
+        const radius = 40;
+        drones[i].x = myPos.x + Math.cos(drones[i].angle) * radius;
+        drones[i].y = myPos.y + Math.sin(drones[i].angle) * radius;
     }
 }
 
@@ -504,6 +624,27 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
+    // Временные стены
+    ctx.fillStyle = '#AAAAAA';
+    temporaryWalls.forEach(wall => {
+        const sx = toScreenX(wall.x);
+        const sy = toScreenY(wall.y);
+        const sw = wall.width * scaleX;
+        const sh = wall.height * scaleY;
+        ctx.fillRect(sx, sy, sw, sh);
+    });
+
+    // Дроны
+    ctx.fillStyle = '#00FF00';
+    drones.forEach(drone => {
+        const sx = toScreenX(drone.x);
+        const sy = toScreenY(drone.y);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 5 * scaleX, 0, 2 * Math.PI);
+        ctx.fill();
+    });
+
+    // Пули
     const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -525,6 +666,14 @@ function draw() {
         grad.addColorStop(0, '#ffaa00');
         grad.addColorStop(1, '#ff5500');
         ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(sx, sy, bulletSize, 0, 2 * Math.PI);
+        ctx.fill();
+    }
+    for (let b of boomerangBullets) {
+        const sx = toScreenX(b.x);
+        const sy = toScreenY(b.y);
+        ctx.fillStyle = '#FF00FF';
         ctx.beginPath();
         ctx.arc(sx, sy, bulletSize, 0, 2 * Math.PI);
         ctx.fill();
