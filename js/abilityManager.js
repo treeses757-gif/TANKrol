@@ -1,105 +1,128 @@
 import { db } from './firebase.js';
-import { ref, update, get } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import { ref, update, get, onValue, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { abilities, abilityList } from './abilities.js';
-import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, TANK_HALF } from './config.js';
-import { isPositionFree, circleRectCollide } from './utils.js';
+import { TELEPORT_DISTANCE, TANK_HALF, VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
+import { isPositionFree } from './utils.js';
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
 let myAbility = null;
 let myAbilityCooldown = 0;
-let activeEffects = {};      // активные эффекты для текущего игрока
-let enemyAbility = null;
+let activeEffects = {};          // активные эффекты для текущего игрока
+let savedState = null;           // для time_rewind
 
-// Синхронизация способностей через Firebase
+// Колбэки для выполнения действий в game.js
+let onTeleportCallback = null;
+let onBoomerangCallback = null;
+let onRewindCallback = null;
+let onWallCallback = null;
+let onDroneCallback = null;
+let onMineCallback = null;
+
+export function setAbilityCallbacks(callbacks) {
+    if (callbacks.teleport) onTeleportCallback = callbacks.teleport;
+    if (callbacks.boomerang) onBoomerangCallback = callbacks.boomerang;
+    if (callbacks.rewind) onRewindCallback = callbacks.rewind;
+    if (callbacks.wall) onWallCallback = callbacks.wall;
+    if (callbacks.drone) onDroneCallback = callbacks.drone;
+    if (callbacks.mine) onMineCallback = callbacks.mine;
+}
+
 export async function initAbilities(roomCode, playerNick) {
     currentRoomCode = roomCode;
     currentPlayerNick = playerNick;
     
-    // Получаем текущие способности из комнаты
     const roomRef = ref(db, `rooms/${roomCode}`);
     const snap = await get(roomRef);
     const data = snap.val();
-    if (data && data.abilities) {
+    if (data && data.abilities && data.abilities[playerNick]) {
         myAbility = data.abilities[playerNick];
-        const enemyNick = Object.keys(data.players).find(n => n !== playerNick);
-        if (enemyNick) enemyAbility = data.abilities[enemyNick];
-    }
-    
-    // Если способность ещё не назначена – генерируем случайную
-    if (!myAbility) {
+    } else {
         const randomAbility = abilityList[Math.floor(Math.random() * abilityList.length)];
         await update(ref(db), {
             [`rooms/${roomCode}/abilities/${playerNick}`]: randomAbility
         });
         myAbility = randomAbility;
     }
+    return myAbility;
 }
 
-// Получить информацию о своей способности
 export function getMyAbility() {
     return myAbility ? { ...abilities[myAbility], id: myAbility } : null;
 }
 
-// Получить кулдаун (в секундах)
 export function getCooldown() {
     return Math.max(0, myAbilityCooldown);
 }
 
-// Активация способности (вызывается по нажатию E)
-export async function activateAbility() {
+export async function activateAbility(myPos, lastMoveDir) {
     if (!currentRoomCode || !currentPlayerNick) return false;
     if (myAbilityCooldown > 0) return false;
     
     const ability = abilities[myAbility];
     if (!ability) return false;
     
-    // Записываем в Firebase факт активации
-    const activationKey = Date.now();
+    const activationKey = Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     await update(ref(db), {
         [`rooms/${currentRoomCode}/activeAbilities/${activationKey}`]: {
             player: currentPlayerNick,
             ability: myAbility,
-            timestamp: activationKey
+            timestamp: activationKey,
+            pos: myPos,
+            dir: lastMoveDir
         }
     });
     
-    // Запускаем локальный кулдаун
     myAbilityCooldown = ability.cooldown;
-    
-    // Применяем мгновенный эффект (если есть)
-    applyEffectLocally(myAbility, true);
-    
+    applyEffectLocally(myAbility, true, myPos, lastMoveDir);
     return true;
 }
 
-// Применить эффект локально (или синхронизировать через Firebase)
-function applyEffectLocally(abilityId, isMe) {
+function applyEffectLocally(abilityId, isMe, myPos, dir) {
     const ability = abilities[abilityId];
     if (!ability) return;
     
+    const now = performance.now() / 1000;
     switch (abilityId) {
         case 'teleport':
-            // телепорт на 200 пикселей в направлении движения
-            // это будет обработано в game.js
+            if (isMe && onTeleportCallback) {
+                onTeleportCallback(myPos, dir);
+            }
             break;
         case 'boomerang':
-            // бумеранг – будет создан специальный снаряд
-            break;
-        case 'wall_constructor':
-            // создание временной стены
-            break;
-        case 'sapper_tape':
-            // взрывная лента
+            if (isMe && onBoomerangCallback) {
+                onBoomerangCallback(myPos, dir);
+            }
             break;
         case 'time_rewind':
-            // откат состояния
+            if (isMe) {
+                if (savedState) {
+                    if (onRewindCallback) onRewindCallback(savedState);
+                    savedState = null;
+                } else {
+                    savedState = { pos: { ...myPos }, health: 100, ammo: 10 };
+                }
+            }
+            break;
+        case 'wall_constructor':
+            if (isMe && onWallCallback) {
+                onWallCallback(myPos, dir);
+            }
+            break;
+        case 'drone_swarm':
+            if (isMe && onDroneCallback) {
+                onDroneCallback(myPos);
+            }
+            break;
+        case 'gravity_mine':
+            if (isMe && onMineCallback) {
+                onMineCallback(myPos);
+            }
             break;
         default:
-            // остальные – просто включаем активный эффект
             if (ability.duration > 0) {
                 activeEffects[abilityId] = {
-                    start: performance.now() / 1000,
+                    start: now,
                     duration: ability.duration,
                     player: isMe ? currentPlayerNick : null
                 };
@@ -108,54 +131,16 @@ function applyEffectLocally(abilityId, isMe) {
     }
 }
 
-// Обновление активных эффектов (вызывается каждый кадр)
-export function updateEffects(deltaTime, myPos, enemyPos, obstacles, canvas, setMyPos, setEnemyPos) {
+export function updateEffects(deltaTime, myPos, enemyPos, obstacles, canvas, enemyNick) {
     const now = performance.now() / 1000;
-    
-    // Удаляем истекшие эффекты
     for (let id in activeEffects) {
         if (now - activeEffects[id].start > activeEffects[id].duration) {
             delete activeEffects[id];
         }
     }
-    
-    // Применяем эффекты
-    let modified = false;
-    
-    if (activeEffects['spider_tank'] && activeEffects['spider_tank'].player === currentPlayerNick) {
-        // Игнорируем препятствия (будет флаг)
-    }
-    
-    if (activeEffects['hacker_pulse'] && activeEffects['hacker_pulse'].player !== currentPlayerNick) {
-        // Инвертируем управление (делаем в updateGame)
-    }
-    
-    if (activeEffects['reflect_shield'] && activeEffects['reflect_shield'].player === currentPlayerNick) {
-        // Отражаем пули
-    }
-    
-    if (activeEffects['gravity_mine'] && activeEffects['gravity_mine'].player !== currentPlayerNick) {
-        // Притягиваем врага
-    }
-    
-    if (activeEffects['magnetic_grab'] && activeEffects['magnetic_grab'].player === currentPlayerNick) {
-        // Притягиваем вражеские пули
-    }
-    
-    if (activeEffects['turbo_ally'] && activeEffects['turbo_ally'].player !== currentPlayerNick) {
-        // Ускоряем врага, но лишаем поворотов
-    }
-    
-    // Возвращаем флаг, изменилась ли позиция
-    return modified;
-}
-
-// Получить список активных эффектов для отрисовки
-export function getActiveEffects() {
     return activeEffects;
 }
 
-// Уменьшить кулдаун каждый кадр
 export function updateCooldown(deltaTime) {
     if (myAbilityCooldown > 0) {
         myAbilityCooldown -= deltaTime;
@@ -163,20 +148,20 @@ export function updateCooldown(deltaTime) {
     }
 }
 
-// Синхронизация способностей от других игроков (слушатель Firebase)
-export function listenAbilities(callback) {
+export function getActiveEffects() {
+    return activeEffects;
+}
+
+export function listenAbilities() {
     if (!currentRoomCode) return;
     const refAbilities = ref(db, `rooms/${currentRoomCode}/activeAbilities`);
     onValue(refAbilities, (snap) => {
         const data = snap.val();
         if (data) {
-            // Обрабатываем новые активации
             for (let key in data) {
                 const activation = data[key];
                 if (activation.player !== currentPlayerNick) {
-                    // Применяем эффект для врага
-                    applyEffectLocally(activation.ability, false);
-                    // Удаляем запись после обработки
+                    applyEffectLocally(activation.ability, false, activation.pos, activation.dir);
                     remove(ref(db, `rooms/${currentRoomCode}/activeAbilities/${key}`));
                 }
             }
