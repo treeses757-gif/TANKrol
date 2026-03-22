@@ -1,9 +1,7 @@
 import { tanks, tankList } from './tanks.js';
 
-let selectedTank = null;
 let onConfirmCallback = null;
 
-// Создаём экран выбора танка
 export function createSelectionScreen(onConfirm) {
     onConfirmCallback = onConfirm;
     
@@ -33,6 +31,8 @@ export function createSelectionScreen(onConfirm) {
     tanksContainer.style.flexWrap = 'wrap';
     tanksContainer.style.justifyContent = 'center';
     
+    let selectedTank = null;
+    
     tankList.forEach(tankId => {
         const tank = tanks[tankId];
         const card = document.createElement('div');
@@ -54,7 +54,6 @@ export function createSelectionScreen(onConfirm) {
         `;
         
         card.addEventListener('click', () => {
-            // Убираем выделение со всех
             document.querySelectorAll('.tank-card').forEach(c => {
                 c.style.transform = 'scale(1)';
                 c.style.border = '2px solid white';
@@ -92,7 +91,6 @@ export function createSelectionScreen(onConfirm) {
     document.body.appendChild(container);
 }
 
-// Показать сообщение о готовности соперника
 export function showWaitingMessage() {
     const container = document.createElement('div');
     container.id = 'waiting-message';
