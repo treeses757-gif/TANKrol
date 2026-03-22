@@ -27,6 +27,7 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
+    // Показ выбора танка
     async function showTankSelection() {
         if (playerTank) return;
         console.log('Показываем экран выбора танка');
@@ -39,7 +40,8 @@ export function initRoom(components) {
         });
     }
 
-    async function startGameIfReady() {
+    // Запуск игры, если оба выбрали танки
+    async function tryStartGame() {
         const roomRef = ref(db, `rooms/${currentRoomCode}`);
         const snap = await get(roomRef);
         const data = snap.val();
@@ -48,7 +50,7 @@ export function initRoom(components) {
         const players = Object.keys(data.players || {});
         const tanks = data.tanks || {};
 
-        console.log('startGameIfReady: players', players, 'tanks', tanks);
+        console.log('tryStartGame: players', players, 'tanks', tanks, 'gameActive', gameActive);
 
         if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
             if (gameActive) {
@@ -56,11 +58,16 @@ export function initRoom(components) {
                 return;
             }
 
+            // Если у нас нет выбранного танка, но в Firebase есть – используем его
             if (!playerTank) {
                 playerTank = tanks[currentPlayerNick];
-                if (!playerTank) return;
+                if (!playerTank) {
+                    console.log('Нет танка для текущего игрока');
+                    return;
+                }
             }
 
+            // Создаём gameState, если его нет
             let gameState = data.gameState;
             if (!gameState) {
                 const pos1 = { x: 100, y: 100 };
@@ -100,14 +107,17 @@ export function initRoom(components) {
             statusDiv.textContent = `Игроков: ${count}/2`;
             console.log(`Игроков в комнате: ${count}`);
 
-            if (currentPlayerNick && !playerTank && !data.tanks[currentPlayerNick]) {
+            // Если в комнате уже 2 игрока и текущий игрок ещё не выбрал танк, показываем выбор
+            if (count === 2 && currentPlayerNick && !playerTank && !data.tanks[currentPlayerNick]) {
+                console.log('Условия для выбора выполнены, показываем');
                 await showTankSelection();
             } else if (currentPlayerNick && data.tanks[currentPlayerNick] && !playerTank) {
                 playerTank = data.tanks[currentPlayerNick];
-                console.log('Восстановили выбор танка из Firebase:', playerTank);
+                console.log('Восстановили танк из Firebase:', playerTank);
             }
 
-            await startGameIfReady();
+            // Пытаемся запустить игру
+            await tryStartGame();
         });
     }
 
