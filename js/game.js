@@ -2,8 +2,9 @@ import { db } from './firebase.js';
 import { ref, onValue, update, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { isPositionFree, circleRectCollide } from './utils.js';
 import { initMobileControls, getJoystickDirection, removeMobileControls, setActivateAbilityCallback } from './mobile-controls.js';
-import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_SIZE, TANK_HALF, BULLET_RADIUS, TELEPORT_DISTANCE } from './config.js';
-import { initAbilities, activateAbility, getMyAbility, getCooldown, updateEffects, updateCooldown, getActiveEffects, listenAbilities, setAbilityCallbacks } from './abilityManager.js';
+import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_SIZE, TANK_HALF, BULLET_RADIUS } from './config.js';
+import { tanks } from './tanks.js';
+import { initSimpleAbilities, activateSimpleAbility, hasActiveEffect, updateEffects, getPhantomPosition } from './abilities-simple.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
@@ -20,13 +21,16 @@ let lastMoveDir = { x: 0, y: -1 };
 let obstacles = [];
 let lastTimestamp = 0;
 let winner = null;
-let abilityCooldown = 0;
-let myAbilityInfo = null;
+let myTank = null;
+let enemyTank = null;
+let myAbilityCooldown = 0;
+const ABILITY_COOLDOWN = 5; // секунд
+let lastAbilityTime = 0;
 
-let teleportRequest = null;
+// Для эффектов
 let boomerangBullets = [];
-let temporaryWalls = [];
-let drones = [];
+let phantomImage = null;
+let reflectActive = false;
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
@@ -87,9 +91,7 @@ export function initGame(components) {
         }
         if (e.code === 'KeyE') {
             e.preventDefault();
-            activateAbility(myPos, lastMoveDir).then(success => {
-                if (success) console.log('Способность активирована');
-            });
+            activateTankAbility();
         }
         if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) e.preventDefault();
     });
@@ -140,8 +142,34 @@ function shoot() {
     });
 }
 
-export async function startGame() {
-    console.log('startGame вызван, currentRoomCode:', currentRoomCode, 'currentPlayerNick:', currentPlayerNick);
+async function activateTankAbility() {
+    if (!gameActive) return;
+    const now = Date.now() / 1000;
+    if (now - lastAbilityTime < ABILITY_COOLDOWN) return;
+    lastAbilityTime = now;
+    
+    const abilityCallbacks = {
+        onPhantom: (pos) => {
+            phantomImage = { pos: { ...pos }, timer: 8 };
+        },
+        onBoomerang: (pos, dir) => {
+            const bullet = {
+                x: pos.x,
+                y: pos.y,
+                vx: dir.x * BULLET_SPEED,
+                vy: dir.y * BULLET_SPEED,
+                owner: currentPlayerNick,
+                key: 'boomerang_' + Date.now(),
+                isBoomerang: true,
+                returnTimer: 0
+            };
+            boomerangBullets.push(bullet);
+        }
+    };
+    activateSimpleAbility(myPos, lastMoveDir, myTank, abilityCallbacks);
+}
+
+export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
     if (!gameScreenEl || !lobbyScreenEl) return;
 
     if (isMobile && window.innerWidth < window.innerHeight) {
@@ -155,76 +183,22 @@ export async function startGame() {
     gameActive = true;
     myBullets = [];
     enemyBullets = [];
+    boomerangBullets = [];
     lastTimestamp = 0;
     winner = null;
     lastShootTime = 0;
-    boomerangBullets = [];
-    temporaryWalls = [];
-    drones = [];
+    myAbilityCooldown = 0;
+    lastAbilityTime = 0;
+    reflectActive = false;
+    phantomImage = null;
 
-    if (currentRoomCode && currentPlayerNick) {
-        console.log('Инициализация способностей...');
-        await initAbilities(currentRoomCode, currentPlayerNick);
-        myAbilityInfo = getMyAbility();
-        console.log('Способность загружена:', myAbilityInfo);
-        listenAbilities();
-
-        setAbilityCallbacks({
-            teleport: (pos, dir) => { teleportRequest = { pos, dir }; },
-            boomerang: (pos, dir) => {
-                const bulletKey = Date.now() + '_boomerang';
-                const bullet = {
-                    x: pos.x,
-                    y: pos.y,
-                    vx: dir.x * BULLET_SPEED,
-                    vy: dir.y * BULLET_SPEED,
-                    owner: currentPlayerNick,
-                    key: bulletKey,
-                    isBoomerang: true,
-                    returnTimer: 0
-                };
-                boomerangBullets.push(bullet);
-            },
-            rewind: (state) => {
-                if (state) {
-                    myPos.x = state.pos.x;
-                    myPos.y = state.pos.y;
-                }
-            },
-            wall: (pos, dir) => {
-                const wallX = pos.x + dir.x * TANK_SIZE;
-                const wallY = pos.y + dir.y * TANK_SIZE;
-                for (let i = -1; i <= 1; i++) {
-                    temporaryWalls.push({
-                        x: wallX + i * TANK_SIZE,
-                        y: wallY,
-                        width: TANK_SIZE,
-                        height: TANK_SIZE,
-                        timer: 6.0
-                    });
-                }
-            },
-            drone: (pos) => {
-                for (let i = 0; i < 3; i++) {
-                    drones.push({
-                        x: pos.x + (i - 1) * 30,
-                        y: pos.y - 40,
-                        angle: i * Math.PI * 2 / 3,
-                        timer: 10.0
-                    });
-                }
-            },
-            mine: (pos) => {
-                console.log('Мина поставлена');
-            }
-        });
-    } else {
-        console.warn('Не удалось инициализировать способности: нет комнаты или ника');
-    }
+    myTank = tankId;
+    enemyTank = enemyTankId;
+    initSimpleAbilities(tankId, enemyTankId);
 
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
-        setActivateAbilityCallback(() => activateAbility(myPos, lastMoveDir));
+        setActivateAbilityCallback(() => activateTankAbility());
         mobileControlsActive = true;
     }
 
@@ -324,8 +298,6 @@ async function restartGame() {
     myBullets = [];
     enemyBullets = [];
     boomerangBullets = [];
-    temporaryWalls = [];
-    drones = [];
     lastShootTime = 0;
     winner = null;
     gameActive = true;
@@ -375,13 +347,10 @@ function gameLoop(timestamp) {
     updateGame(deltaTime);
     updateBullets(deltaTime);
     updateBoomerangs(deltaTime);
-    updateTemporaryWalls(deltaTime);
-    updateDrones(deltaTime);
+    updateEffects();
+    updatePhantom(deltaTime);
     updateCamera();
     updateEnemyTurret();
-    updateCooldown(deltaTime);
-    abilityCooldown = getCooldown();
-    updateEffects(deltaTime, myPos, enemyPos, obstacles, canvas, enemyNick);
     draw();
     requestAnimationFrame(gameLoop);
 }
@@ -407,23 +376,17 @@ function updateGame(deltaTime) {
         }
     }
 
-    if (teleportRequest) {
-        const dir = teleportRequest.dir;
-        let newX_tele = teleportRequest.pos.x + dir.x * TELEPORT_DISTANCE;
-        let newY_tele = teleportRequest.pos.y + dir.y * TELEPORT_DISTANCE;
-        newX_tele = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX_tele));
-        newY_tele = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY_tele));
-        if (isPositionFree(newX_tele, newY_tele, TANK_HALF, obstacles)) {
-            newX = newX_tele;
-            newY = newY_tele;
-        }
-        teleportRequest = null;
+    // Эффект танка-паука: игнорируем препятствия
+    let canMove = true;
+    if (hasActiveEffect('spider')) {
+        canMove = true;
+    } else {
+        newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
+        newY = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY));
+        canMove = isPositionFree(newX, newY, TANK_HALF, obstacles);
     }
 
-    newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
-    newY = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY));
-
-    if (isPositionFree(newX, newY, TANK_HALF, obstacles)) {
+    if (canMove) {
         if (newX !== myPos.x || newY !== myPos.y) {
             myPos.x = newX;
             myPos.y = newY;
@@ -444,6 +407,28 @@ function updateBullets(deltaTime) {
         b.y += b.vy * deltaTime;
     }
 
+    // Отражающий щит: если активен, вражеские пули отражаются
+    const reflectActive = hasActiveEffect('reflect');
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const b = enemyBullets[i];
+        if (reflectActive) {
+            const dx = b.x - myPos.x;
+            const dy = b.y - myPos.y;
+            if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
+                // Отражаем пулю
+                b.vx = -b.vx;
+                b.vy = -b.vy;
+                b.owner = currentPlayerNick; // меняем владельца для отрисовки
+                // Пуля становится "своей" для нас, но мы не добавляем её в myBullets, просто меняем направление
+                // Удаляем из enemyBullets и добавляем в myBullets
+                enemyBullets.splice(i, 1);
+                myBullets.push(b);
+                continue;
+            }
+        }
+    }
+
+    // Свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
@@ -472,6 +457,7 @@ function updateBullets(deltaTime) {
         }
     }
 
+    // Вражеские пули (без отражения)
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
         let hit = false;
@@ -530,28 +516,12 @@ function updateBoomerangs(deltaTime) {
     }
 }
 
-function updateTemporaryWalls(deltaTime) {
-    for (let i = 0; i < temporaryWalls.length; i++) {
-        temporaryWalls[i].timer -= deltaTime;
-        if (temporaryWalls[i].timer <= 0) {
-            temporaryWalls.splice(i, 1);
-            i--;
+function updatePhantom(deltaTime) {
+    if (phantomImage) {
+        phantomImage.timer -= deltaTime;
+        if (phantomImage.timer <= 0) {
+            phantomImage = null;
         }
-    }
-}
-
-function updateDrones(deltaTime) {
-    for (let i = 0; i < drones.length; i++) {
-        drones[i].timer -= deltaTime;
-        if (drones[i].timer <= 0) {
-            drones.splice(i, 1);
-            i--;
-            continue;
-        }
-        drones[i].angle += 3 * deltaTime;
-        const radius = 40;
-        drones[i].x = myPos.x + Math.cos(drones[i].angle) * radius;
-        drones[i].y = myPos.y + Math.sin(drones[i].angle) * radius;
     }
 }
 
@@ -566,7 +536,7 @@ function updateEnemyTurret() {
     }
 }
 
-function drawTank(x, y, color, direction) {
+function drawTank(x, y, color, direction, isPhantom = false) {
     const sx = toScreenX(x);
     const sy = toScreenY(y);
     const scaleX = getScaleX();
@@ -576,6 +546,9 @@ function drawTank(x, y, color, direction) {
     const left = sx - w/2;
     const top = sy - h/2;
 
+    if (isPhantom) {
+        ctx.globalAlpha = 0.5;
+    }
     ctx.fillStyle = color;
     ctx.fillRect(left, top, w, h);
 
@@ -598,6 +571,10 @@ function drawTank(x, y, color, direction) {
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 4 * scaleX;
     ctx.stroke();
+    
+    if (isPhantom) {
+        ctx.globalAlpha = 1;
+    }
 }
 
 function draw() {
@@ -615,23 +592,10 @@ function draw() {
         ctx.fillRect(sx, sy, sw, sh);
     });
 
-    ctx.fillStyle = '#AAAAAA';
-    temporaryWalls.forEach(wall => {
-        const sx = toScreenX(wall.x);
-        const sy = toScreenY(wall.y);
-        const sw = wall.width * scaleX;
-        const sh = wall.height * scaleY;
-        ctx.fillRect(sx, sy, sw, sh);
-    });
-
-    ctx.fillStyle = '#00FF00';
-    drones.forEach(drone => {
-        const sx = toScreenX(drone.x);
-        const sy = toScreenY(drone.y);
-        ctx.beginPath();
-        ctx.arc(sx, sy, 5 * scaleX, 0, 2 * Math.PI);
-        ctx.fill();
-    });
+    // Фантом (копия)
+    if (phantomImage) {
+        drawTank(phantomImage.pos.x, phantomImage.pos.y, '#AAAAAA', lastMoveDir, true);
+    }
 
     const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
@@ -668,39 +632,40 @@ function draw() {
     }
     ctx.shadowBlur = 0;
 
-    drawTank(enemyPos.x, enemyPos.y, '#E53935', enemyTurretDir);
-    drawTank(myPos.x, myPos.y, '#1E88E5', lastMoveDir);
+    // Вражеский танк
+    const enemyTankColor = tanks[enemyTank]?.color || '#E53935';
+    drawTank(enemyPos.x, enemyPos.y, enemyTankColor, enemyTurretDir);
+    // Свой танк
+    const myTankColor = tanks[myTank]?.color || '#1E88E5';
+    drawTank(myPos.x, myPos.y, myTankColor, lastMoveDir);
 
-    // Интерфейс способности и индикатор готовности
-    if (myAbilityInfo) {
+    // Интерфейс способности
+    const now = Date.now() / 1000;
+    const cooldownLeft = Math.max(0, ABILITY_COOLDOWN - (now - lastAbilityTime));
+    const tankInfo = tanks[myTank];
+    if (tankInfo) {
         ctx.font = '16px Arial';
         ctx.fillStyle = 'white';
         ctx.shadowBlur = 0;
-        ctx.fillText(`Способность: ${myAbilityInfo.name}`, canvas.width - 200, 30);
-        if (abilityCooldown > 0) {
+        ctx.fillText(`Танк: ${tankInfo.name}`, canvas.width - 200, 30);
+        ctx.fillText(`Способность: ${tankInfo.abilityName}`, canvas.width - 200, 55);
+        if (cooldownLeft > 0) {
             ctx.fillStyle = 'orange';
-            ctx.fillText(`Кулдаун: ${abilityCooldown.toFixed(1)}с`, canvas.width - 200, 55);
+            ctx.fillText(`Кулдаун: ${cooldownLeft.toFixed(1)}с`, canvas.width - 200, 80);
         } else {
             ctx.fillStyle = 'lightgreen';
-            ctx.fillText('Готово (E)', canvas.width - 200, 55);
+            ctx.fillText('Готово (E)', canvas.width - 200, 80);
         }
 
-        // Маленькая точка в правом верхнем углу
+        // Индикатор в углу
         const indicatorX = canvas.width - 20;
         const indicatorY = 20;
         ctx.beginPath();
         ctx.arc(indicatorX, indicatorY, 8, 0, 2 * Math.PI);
-        if (abilityCooldown <= 0) {
-            ctx.fillStyle = '#00ff00'; // зелёная – готова
-        } else {
-            ctx.fillStyle = '#ff5500'; // оранжевая – на кулдауне
-        }
+        ctx.fillStyle = cooldownLeft <= 0 ? '#00ff00' : '#ff5500';
         ctx.fill();
         ctx.strokeStyle = 'white';
         ctx.lineWidth = 2;
         ctx.stroke();
-    } else {
-        // Если способность ещё не загружена, выводим сообщение в консоль
-        console.log('myAbilityInfo = null, способность не отображается');
     }
 }
