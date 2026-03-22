@@ -19,22 +19,24 @@ export function initAuth(components) {
         return btoa(password);
     }
 
+    // Переключение между формами
     if (showLoginBtn && showRegisterBtn) {
         showLoginBtn.addEventListener('click', () => {
             showLoginBtn.classList.add('active');
             showRegisterBtn.classList.remove('active');
-            loginForm.classList.add('active');
-            registerForm.classList.remove('active');
+            if (loginForm) loginForm.classList.add('active');
+            if (registerForm) registerForm.classList.remove('active');
         });
 
         showRegisterBtn.addEventListener('click', () => {
             showRegisterBtn.classList.add('active');
             showLoginBtn.classList.remove('active');
-            registerForm.classList.add('active');
-            loginForm.classList.remove('active');
+            if (registerForm) registerForm.classList.add('active');
+            if (loginForm) loginForm.classList.remove('active');
         });
     }
 
+    // Регистрация
     if (registerForm) {
         registerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -44,11 +46,11 @@ export function initAuth(components) {
             const errorDiv = document.getElementById('register-error');
 
             if (!nick) {
-                errorDiv.textContent = 'Ник не может быть пустым';
+                if (errorDiv) errorDiv.textContent = 'Ник не может быть пустым';
                 return;
             }
             if (password !== confirm) {
-                errorDiv.textContent = 'Пароли не совпадают';
+                if (errorDiv) errorDiv.textContent = 'Пароли не совпадают';
                 return;
             }
 
@@ -56,22 +58,23 @@ export function initAuth(components) {
                 const userRef = ref(db, `users/${nick}`);
                 const snapshot = await get(userRef);
                 if (snapshot.exists()) {
-                    errorDiv.textContent = 'Ник уже занят';
+                    if (errorDiv) errorDiv.textContent = 'Ник уже занят';
                     return;
                 }
                 await set(userRef, { password: hashPassword(password) });
-                errorDiv.textContent = 'Регистрация успешна! Теперь войдите.';
+                if (errorDiv) errorDiv.textContent = 'Регистрация успешна! Теперь войдите.';
                 if (showLoginBtn) showLoginBtn.click();
                 document.getElementById('register-username').value = '';
                 document.getElementById('register-password').value = '';
                 document.getElementById('register-confirm').value = '';
             } catch (err) {
                 console.error(err);
-                errorDiv.textContent = 'Ошибка регистрации';
+                if (errorDiv) errorDiv.textContent = 'Ошибка регистрации';
             }
         });
     }
 
+    // Вход
     if (loginForm) {
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -80,7 +83,7 @@ export function initAuth(components) {
             const errorDiv = document.getElementById('login-error');
 
             if (!nick) {
-                errorDiv.textContent = 'Введите ник';
+                if (errorDiv) errorDiv.textContent = 'Введите ник';
                 return;
             }
 
@@ -88,12 +91,12 @@ export function initAuth(components) {
                 const userRef = ref(db, `users/${nick}`);
                 const snapshot = await get(userRef);
                 if (!snapshot.exists()) {
-                    errorDiv.textContent = 'Пользователь не найден';
+                    if (errorDiv) errorDiv.textContent = 'Пользователь не найден';
                     return;
                 }
                 const userData = snapshot.val();
                 if (userData.password !== hashPassword(password)) {
-                    errorDiv.textContent = 'Неверный пароль';
+                    if (errorDiv) errorDiv.textContent = 'Неверный пароль';
                     return;
                 }
                 localStorage.setItem('playerNick', nick);
@@ -112,6 +115,7 @@ export function initAuth(components) {
         });
     }
 
+    // Выход из аккаунта
     if (logoutBtn) {
         logoutBtn.addEventListener('click', () => {
             localStorage.removeItem('playerNick');
