@@ -9,6 +9,7 @@ let currentPlayerNick = null;
 let currentRoomCode = null;
 let roomListener = null;
 let playerTank = null;
+let selectionShown = false; // флаг, чтобы не показывать выбор дважды
 
 export function initRoom(components) {
     const {
@@ -28,7 +29,11 @@ export function initRoom(components) {
     }
 
     async function showTankSelectionAndWait() {
+        if (selectionShown) return;
+        selectionShown = true;
+        console.log('Показываем экран выбора танка');
         createSelectionScreen(async (tankId) => {
+            console.log('Выбран танк:', tankId);
             playerTank = tankId;
             await update(ref(db), {
                 [`rooms/${currentRoomCode}/tanks/${currentPlayerNick}`]: tankId
@@ -38,13 +43,19 @@ export function initRoom(components) {
     }
 
     async function checkAndStartGame() {
+        console.log('checkAndStartGame вызван');
         const roomRef = ref(db, `rooms/${currentRoomCode}`);
         const snap = await get(roomRef);
         const data = snap.val();
+        if (!data) return;
         const players = Object.keys(data.players || {});
         const tanks = data.tanks || {};
 
+        console.log('Игроки:', players);
+        console.log('Выбранные танки:', tanks);
+
         if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
+            console.log('Оба выбрали танки, начинаем игру');
             hideWaitingMessage();
             const enemyNick = players.find(n => n !== currentPlayerNick);
             const enemyTank = tanks[enemyNick];
@@ -54,6 +65,7 @@ export function initRoom(components) {
             listenGameState(currentRoomCode, currentPlayerNick);
             if (onRoomJoined) onRoomJoined(currentRoomCode);
         } else if (playerTank) {
+            console.log('Ждём выбора соперника');
             showWaitingMessage();
         }
     }
@@ -79,6 +91,7 @@ export function initRoom(components) {
             roomCodeSpan.textContent = code;
             copyBtn.style.display = 'inline-block';
             listenRoom(code);
+            console.log('Комната создана, код:', code);
         } catch (err) {
             console.error(err);
             alert('Ошибка создания комнаты');
@@ -92,6 +105,7 @@ export function initRoom(components) {
             alert('Введите код из цифр');
             return;
         }
+        console.log('Попытка присоединиться к комнате:', code);
         try {
             const roomRef = ref(db, `rooms/${code}`);
             const snap = await get(roomRef);
@@ -105,6 +119,7 @@ export function initRoom(components) {
             roomCodeSpan.textContent = code;
             copyBtn.style.display = 'inline-block';
             listenRoom(code);
+            console.log('Присоединились, код:', code);
         } catch (err) {
             console.error(err);
             alert('Ошибка присоединения');
@@ -131,29 +146,35 @@ export function initRoom(components) {
             const players = data.players || {};
             const count = Object.keys(players).length;
             statusDiv.textContent = `Игроков: ${count}/2`;
+            console.log(`Игроков в комнате: ${count}`);
 
-            // Если оба игрока подключились и игра ещё не началась
+            // Если оба игрока подключились
             if (count === 2 && data.gameState === null) {
+                // Создаём начальные позиции, если ещё не созданы
                 if (!data.gameState) {
+                    const playerIds = Object.keys(players);
                     const pos1 = { x: 100, y: 100 };
                     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
                     const gameState = {
-                        [Object.keys(players)[0]]: pos1,
-                        [Object.keys(players)[1]]: pos2
+                        [playerIds[0]]: pos1,
+                        [playerIds[1]]: pos2
                     };
                     await set(ref(db, `rooms/${code}/gameState`), gameState);
+                    console.log('Созданы начальные позиции');
                 }
 
-                // Если мы ещё не выбрали танк – показываем выбор
-                if (currentPlayerNick && !playerTank) {
+                // Показываем выбор танка, если мы ещё не выбрали
+                if (currentPlayerNick && !playerTank && !selectionShown) {
+                    console.log('Оба игрока на месте, показываем выбор танка');
                     showTankSelectionAndWait();
                 }
             }
 
-            // Если оба выбрали танки – запускаем игру (если ещё не активна)
+            // Проверяем, выбрали ли оба танки и не начата ли игра
             const tanks = data.tanks || {};
             if (count === 2 && tanks[players[0]] && tanks[players[1]] && data.gameState && !gameActive) {
                 if (currentPlayerNick && playerTank) {
+                    console.log('Оба выбрали танки, запускаем игру');
                     await checkAndStartGame();
                 }
             }
@@ -165,6 +186,8 @@ export function initRoom(components) {
             remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerNick}`));
         }
         currentRoomCode = null;
+        playerTank = null;
+        selectionShown = false;
         if (roomListener) roomListener();
         if (onRoomLeft) onRoomLeft();
     }
