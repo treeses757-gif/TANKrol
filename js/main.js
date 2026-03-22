@@ -41,7 +41,7 @@ if (currentPlayerNick) {
     userNickSpan.textContent = currentPlayerNick;
 }
 
-// Инициализация игры (без restart элементов)
+// Инициализация игры
 initGame({
     gameScreen,
     lobbyScreen,
@@ -69,12 +69,10 @@ const roomHandlers = initRoom({
     roomCodeDisplay
 });
 
-// Callback for returning to room after game
+// Callback для возврата в комнату после игры
 setReturnToRoomCallback(() => {
-    // Show room lobby, hide game over
     gameOverScreen.classList.remove('active');
     roomLobbyScreen.classList.add('active');
-    // Also ensure game is stopped
     stopGame();
 });
 
