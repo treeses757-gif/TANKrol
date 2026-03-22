@@ -287,8 +287,7 @@ export function stopGame() {
     if (isMobile && mobileControlsActive) {
         removeMobileControls();
         mobileControlsActive = false;
-    export function setReturnToRoomCallback(callback) {
-    returnToRoomCallback = callback;
+    }
 }
 
 function showGameOver(message) {
