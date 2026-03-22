@@ -39,7 +39,7 @@ export function initRoom(components) {
                 players: { [currentPlayerNick]: true },
                 gameState: null,
                 map: map,
-                abilities: {}  // пустой объект для способностей
+                abilities: {}
             });
             currentRoomCode = code;
             roomCodeDisplay.textContent = code;
@@ -87,7 +87,7 @@ export function initRoom(components) {
         }
     });
 
-    function listenRoom(code) {
+    async function listenRoom(code) {
         if (roomListener) roomListener();
         const roomRef = ref(db, `rooms/${code}`);
         roomListener = onValue(roomRef, async (snap) => {
@@ -111,7 +111,7 @@ export function initRoom(components) {
 
             if (count === 2 && data.gameState !== null && !gameActive) {
                 loadMap(code);
-                startGame();
+                await startGame();  // Ждём инициализацию способностей
                 listenGameState(code, currentPlayerNick);
                 if (onRoomJoined) onRoomJoined(code);
             }
