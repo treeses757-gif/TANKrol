@@ -141,6 +141,7 @@ function shoot() {
 }
 
 export async function startGame() {
+    console.log('startGame вызван, currentRoomCode:', currentRoomCode, 'currentPlayerNick:', currentPlayerNick);
     if (!gameScreenEl || !lobbyScreenEl) return;
 
     if (isMobile && window.innerWidth < window.innerHeight) {
@@ -162,8 +163,10 @@ export async function startGame() {
     drones = [];
 
     if (currentRoomCode && currentPlayerNick) {
+        console.log('Инициализация способностей...');
         await initAbilities(currentRoomCode, currentPlayerNick);
         myAbilityInfo = getMyAbility();
+        console.log('Способность загружена:', myAbilityInfo);
         listenAbilities();
 
         setAbilityCallbacks({
@@ -215,6 +218,8 @@ export async function startGame() {
                 console.log('Мина поставлена');
             }
         });
+    } else {
+        console.warn('Не удалось инициализировать способности: нет комнаты или ника');
     }
 
     if (isMobile && !document.getElementById('mobile-controls')) {
@@ -680,7 +685,7 @@ function draw() {
             ctx.fillText('Готово (E)', canvas.width - 200, 55);
         }
 
-        // Маленькая цветная точка в правом верхнем углу
+        // Маленькая точка в правом верхнем углу
         const indicatorX = canvas.width - 20;
         const indicatorY = 20;
         ctx.beginPath();
@@ -694,5 +699,8 @@ function draw() {
         ctx.strokeStyle = 'white';
         ctx.lineWidth = 2;
         ctx.stroke();
+    } else {
+        // Если способность ещё не загружена, выводим сообщение в консоль
+        console.log('myAbilityInfo = null, способность не отображается');
     }
 }
