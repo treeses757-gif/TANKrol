@@ -1,118 +1,133 @@
-import './firebase.js';
-import { initAuth } from './auth.js';
-import { initRoom } from './room.js';
-import { initGame, startGame, stopGame, setCurrentRoom, listenGameState, setReturnToRoomCallback } from './game.js';
+import { db } from './firebase.js';
+import { ref, get, set } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 
-// Элементы DOM
-const authScreen = document.getElementById('auth-screen');
-const lobbyScreen = document.getElementById('lobby');
-const roomLobbyScreen = document.getElementById('room-lobby');
-const gameScreen = document.getElementById('game');
-const gameOverScreen = document.getElementById('game-over');
-const gameoverMessage = document.getElementById('gameover-message');
+export function initAuth(components) {
+    const {
+        authScreen,
+        lobbyScreen,
+        loginForm,
+        registerForm,
+        showLoginBtn,
+        showRegisterBtn,
+        userNickSpan,
+        logoutBtn,
+        onLoginSuccess,
+        onLogout
+    } = components;
 
-const loginForm = document.getElementById('login-form');
-const registerForm = document.getElementById('register-form');
-const showLoginBtn = document.getElementById('show-login');
-const showRegisterBtn = document.getElementById('show-register');
-const userNickSpan = document.getElementById('user-nick');
-const logoutBtn = document.getElementById('logoutBtn');
+    function hashPassword(password) {
+        return btoa(password);
+    }
 
-const createBtn = document.getElementById('createBtn');
-const joinBtn = document.getElementById('joinBtn');
-const roomCodeInput = document.getElementById('roomCodeInput');
-const roomCodeDisplay = document.getElementById('roomCodeDisplay');
-const copyBtn = document.getElementById('copyBtn');
-const statusDiv = document.getElementById('status');
+    // Переключение между формами
+    if (showLoginBtn && showRegisterBtn) {
+        showLoginBtn.addEventListener('click', () => {
+            showLoginBtn.classList.add('active');
+            showRegisterBtn.classList.remove('active');
+            if (loginForm) loginForm.classList.add('active');
+            if (registerForm) registerForm.classList.remove('active');
+        });
 
-// Room lobby elements
-const roomCodeRoomLobby = document.getElementById('roomCodeRoomLobby');
-const playersList = document.getElementById('players-list');
-const chooseTankBtn = document.getElementById('chooseTankBtn');
-const readyBtn = document.getElementById('readyBtn');
-const leaveRoomBtn = document.getElementById('leaveRoomBtn');
-const roomStatus = document.getElementById('room-status');
+        showRegisterBtn.addEventListener('click', () => {
+            showRegisterBtn.classList.add('active');
+            showLoginBtn.classList.remove('active');
+            if (registerForm) registerForm.classList.add('active');
+            if (loginForm) loginForm.classList.remove('active');
+        });
+    }
 
-let currentPlayerNick = localStorage.getItem('playerNick') || null;
+    // Регистрация
+    if (registerForm) {
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const nick = document.getElementById('register-username').value.trim();
+            const password = document.getElementById('register-password').value;
+            const confirm = document.getElementById('register-confirm').value;
+            const errorDiv = document.getElementById('register-error');
 
-if (currentPlayerNick) {
-    authScreen.classList.remove('active');
-    lobbyScreen.classList.add('active');
-    userNickSpan.textContent = currentPlayerNick;
+            if (!nick) {
+                if (errorDiv) errorDiv.textContent = 'Ник не может быть пустым';
+                return;
+            }
+            if (password !== confirm) {
+                if (errorDiv) errorDiv.textContent = 'Пароли не совпадают';
+                return;
+            }
+
+            try {
+                const userRef = ref(db, `users/${nick}`);
+                const snapshot = await get(userRef);
+                if (snapshot.exists()) {
+                    if (errorDiv) errorDiv.textContent = 'Ник уже занят';
+                    return;
+                }
+                await set(userRef, { password: hashPassword(password) });
+                if (errorDiv) errorDiv.textContent = 'Регистрация успешна! Теперь войдите.';
+                if (showLoginBtn) showLoginBtn.click();
+                document.getElementById('register-username').value = '';
+                document.getElementById('register-password').value = '';
+                document.getElementById('register-confirm').value = '';
+            } catch (err) {
+                console.error(err);
+                if (errorDiv) errorDiv.textContent = 'Ошибка регистрации';
+            }
+        });
+    }
+
+    // Вход
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const nick = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+
+            if (!nick) {
+                if (errorDiv) errorDiv.textContent = 'Введите ник';
+                return;
+            }
+
+            try {
+                const userRef = ref(db, `users/${nick}`);
+                const snapshot = await get(userRef);
+                if (!snapshot.exists()) {
+                    if (errorDiv) errorDiv.textContent = 'Пользователь не найден';
+                    return;
+                }
+                const userData = snapshot.val();
+                if (userData.password !== hashPassword(password)) {
+                    if (errorDiv) errorDiv.textContent = 'Неверный пароль';
+                    return;
+                }
+                localStorage.setItem('playerNick', nick);
+                if (userNickSpan) userNickSpan.textContent = nick;
+                if (authScreen) authScreen.classList.remove('active');
+                if (lobbyScreen) lobbyScreen.classList.add('active');
+                if (errorDiv) errorDiv.textContent = '';
+                document.getElementById('login-username').value = '';
+                document.getElementById('login-password').value = '';
+
+                if (onLoginSuccess) onLoginSuccess(nick);
+            } catch (err) {
+                console.error(err);
+                if (errorDiv) errorDiv.textContent = 'Ошибка входа';
+            }
+        });
+    }
+
+    // Выход из аккаунта
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('playerNick');
+            if (authScreen) authScreen.classList.add('active');
+            if (lobbyScreen) lobbyScreen.classList.remove('active');
+            const gameScreen = document.getElementById('game');
+            if (gameScreen) gameScreen.classList.remove('active');
+            const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+            if (roomCodeDisplay) roomCodeDisplay.textContent = '——';
+            const copyBtn = document.getElementById('copyBtn');
+            if (copyBtn) copyBtn.style.display = 'none';
+            if (onLogout) onLogout();
+        });
+    }
 }
-
-// Инициализация игры (без restart элементов)
-initGame({
-    gameScreen,
-    lobbyScreen,
-    gameOverScreen,
-    gameoverMessage
-});
-
-const roomHandlers = initRoom({
-    lobbyScreen,
-    roomLobbyScreen,
-    roomCodeRoomLobby,
-    playersList,
-    chooseTankBtn,
-    readyBtn,
-    leaveRoomBtn,
-    roomStatus,
-    onRoomJoined: (code) => {
-        setCurrentRoom(code, currentPlayerNick);
-    },
-    onRoomLeft: () => {
-        stopGame();
-        setCurrentRoom(null, null);
-    },
-    copyBtn,
-    roomCodeDisplay
-});
-
-// Callback for returning to room after game
-setReturnToRoomCallback(() => {
-    // Show room lobby, hide game over
-    gameOverScreen.classList.remove('active');
-    roomLobbyScreen.classList.add('active');
-    // Also ensure game is stopped
-    stopGame();
-});
-
-initAuth({
-    authScreen,
-    lobbyScreen,
-    loginForm,
-    registerForm,
-    showLoginBtn,
-    showRegisterBtn,
-    userNickSpan,
-    logoutBtn,
-    onLoginSuccess: (nick) => {
-        currentPlayerNick = nick;
-        roomHandlers.setPlayerNick(nick);
-    },
-    onLogout: () => {
-        currentPlayerNick = null;
-        roomHandlers.leaveRoom();
-        stopGame();
-        roomHandlers.setPlayerNick(null);
-    }
-});
-
-roomHandlers.setPlayerNick(currentPlayerNick);
-
-// Обработчики кнопок создания/присоединения
-createBtn.onclick = () => {
-    roomHandlers.createRoom();
-};
-joinBtn.onclick = () => {
-    const code = roomCodeInput.value.trim();
-    if (code) roomHandlers.joinRoom(code);
-    else alert('Введите код');
-};
-
-window.addEventListener('beforeunload', () => {
-    if (currentPlayerNick && roomHandlers.getRoomCode()) {
-        // Cleanup can be done by leaveRoom but we rely on Firebase
-    }
-});
