@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tankrol</title>
+    <title>Дуель супер танков</title>
     <link rel="stylesheet" href="css/style.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 </head>
@@ -34,7 +34,7 @@
         </div>
     </div>
 
-    <!-- Лобби -->
+    <!-- Лобби (создание/присоединение) -->
     <div id="lobby" class="screen">
         <div class="lobby-container">
             <h2>Добро пожаловать, <span id="user-nick"></span>!</h2>
@@ -49,38 +49,36 @@
                 <div id="roomCodeDisplay">——</div>
                 <button id="copyBtn" style="display:none;">📋 Копировать</button>
             </div>
-            <!-- Блок информации о комнате -->
-            <div id="room-info" style="margin-top: 20px; display: none;">
-                <h3>Комната <span id="roomCodeSpan"></span></h3>
-                <div id="players-list">
-                    <div class="player-item">Ожидание игроков...</div>
-                </div>
-                <div id="room-controls">
-                    <button id="selectTankBtn" class="secondary-btn" style="margin-right: 10px;">Выбрать танк</button>
-                    <button id="readyBtn" class="primary-btn" style="background: #4CAF50;">Готов</button>
-                    <button id="unreadyBtn" class="secondary-btn" style="display: none; background: #f44336;">Не готов</button>
-                    <button id="leaveRoomBtn" class="logout-btn" style="margin-top: 10px;">Покинуть комнату</button>
-                </div>
-                <div id="room-status"></div>
+            <div id="status">Ожидание...</div>
+            <button id="logoutBtn" class="logout-btn">Выйти из аккаунта</button>
+        </div>
+    </div>
+
+    <!-- Экран комнаты (ожидание) -->
+    <div id="room-lobby" class="screen">
+        <div class="room-lobby-container">
+            <h2>Комната: <span id="roomCodeRoomLobby"></span></h2>
+            <div id="players-list" class="players-list"></div>
+            <div class="room-buttons">
+                <button id="chooseTankBtn" class="primary-btn">Выбрать танк</button>
+                <button id="readyBtn" class="ready-btn">Готов</button>
+                <button id="leaveRoomBtn" class="secondary-btn">Покинуть комнату</button>
             </div>
-            <button id="logoutAccountBtn" class="logout-btn" style="margin-top: 20px;">Выйти из аккаунта</button>
+            <div id="room-status" class="room-status"></div>
         </div>
     </div>
 
     <!-- Игровой экран -->
     <div id="game" class="screen">
         <canvas id="gameCanvas"></canvas>
-        <div id="roomInfo">Комната: <span id="gameRoomCode"></span></div>
-        <div id="game-controls" style="position: absolute; bottom: 20px; right: 20px;">
-            <button id="returnToLobbyBtn" class="secondary-btn" style="background: #555;">Вернуться в комнату</button>
-        </div>
+        <div id="roomInfo">Комната: <span id="roomCodeSpan"></span></div>
     </div>
 
-    <!-- Экран победы/поражения -->
+    <!-- Экран результата -->
     <div id="game-over" class="screen">
         <div class="gameover-container">
             <h2 id="gameover-message"></h2>
-            <button id="returnAfterGameBtn" class="primary-btn">Вернуться в комнату</button>
+            <button id="return-to-room-btn" class="primary-btn">Вернуться в комнату</button>
         </div>
     </div>
 
