@@ -41,49 +41,54 @@ export function initRoom(components) {
         const playerCount = Object.keys(players).length;
 
         // Обновляем отображение игроков
-        playersList.innerHTML = '';
-        for (const nick in players) {
-            const tankId = tanksData[nick];
-            const tank = tankId ? tanks[tankId] : null;
-            const isReady = readyData[nick] || false;
-            const isCurrent = nick === currentPlayerNick;
+        if (playersList) {
+            playersList.innerHTML = '';
+            for (const nick in players) {
+                const tankId = tanksData[nick];
+                const tank = tankId ? tanks[tankId] : null;
+                const isReady = readyData[nick] || false;
+                const isCurrent = nick === currentPlayerNick;
 
-            const card = document.createElement('div');
-            card.className = 'player-card';
-            card.innerHTML = `
-                <div class="player-info">
-                    <div class="player-name">${nick}${isCurrent ? ' (Вы)' : ''}</div>
-                    <div class="player-tank">${tank ? `${tank.icon} ${tank.name}` : 'Танк не выбран'}</div>
-                </div>
-                <div class="ready-indicator ready-${isReady}">${isReady ? 'Готов' : 'Не готов'}</div>
-            `;
-            playersList.appendChild(card);
+                const card = document.createElement('div');
+                card.className = 'player-card';
+                card.innerHTML = `
+                    <div class="player-info">
+                        <div class="player-name">${nick}${isCurrent ? ' (Вы)' : ''}</div>
+                        <div class="player-tank">${tank ? `${tank.icon} ${tank.name}` : 'Танк не выбран'}</div>
+                    </div>
+                    <div class="ready-indicator ready-${isReady}">${isReady ? 'Готов' : 'Не готов'}</div>
+                `;
+                playersList.appendChild(card);
+            }
         }
 
         // Обновляем кнопку "Готов"
-        if (playerTank) {
-            readyBtn.disabled = false;
-            const myReady = readyData[currentPlayerNick] || false;
-            readyBtn.textContent = myReady ? 'Не готов' : 'Готов';
-            readyBtn.classList.toggle('ready', myReady);
-        } else {
-            readyBtn.disabled = true;
-            readyBtn.textContent = 'Сначала выберите танк';
-            readyBtn.classList.remove('ready');
+        if (readyBtn) {
+            if (playerTank) {
+                readyBtn.disabled = false;
+                const myReady = readyData[currentPlayerNick] || false;
+                readyBtn.textContent = myReady ? 'Не готов' : 'Готов';
+                readyBtn.classList.toggle('ready', myReady);
+            } else {
+                readyBtn.disabled = true;
+                readyBtn.textContent = 'Сначала выберите танк';
+                readyBtn.classList.remove('ready');
+            }
         }
 
         // Статус
-        if (playerCount === 2) {
-            const bothReady = Object.keys(players).every(nick => readyData[nick] === true);
-            if (bothReady && !isInGame) {
-                roomStatus.textContent = 'Оба готовы! Игра начинается...';
-                // Запускаем игру через секунду, чтобы UI обновился
-                setTimeout(() => startGameIfReady(data), 100);
+        if (roomStatus) {
+            if (playerCount === 2) {
+                const bothReady = Object.keys(players).every(nick => readyData[nick] === true);
+                if (bothReady && !isInGame) {
+                    roomStatus.textContent = 'Оба готовы! Игра начинается...';
+                    setTimeout(() => startGameIfReady(data), 100);
+                } else {
+                    roomStatus.textContent = `Игроков: ${playerCount}/2. Ожидаем готовности...`;
+                }
             } else {
-                roomStatus.textContent = `Игроков: ${playerCount}/2. Ожидаем готовности...`;
+                roomStatus.textContent = `Ожидание игроков (${playerCount}/2)...`;
             }
-        } else {
-            roomStatus.textContent = `Ожидание игроков (${playerCount}/2)...`;
         }
     }
 
@@ -108,8 +113,9 @@ export function initRoom(components) {
             if (onRoomJoined) onRoomJoined(currentRoomCode);
 
             // Скрываем комнатный лобби, показываем игру
-            roomLobbyScreen.classList.remove('active');
-            document.getElementById('game').classList.add('active');
+            if (roomLobbyScreen) roomLobbyScreen.classList.remove('active');
+            const gameScreen = document.getElementById('game');
+            if (gameScreen) gameScreen.classList.add('active');
         }
     }
 
@@ -147,8 +153,8 @@ export function initRoom(components) {
         if (onRoomLeft) onRoomLeft();
 
         // Показываем основной лобби, скрываем комнатный
-        roomLobbyScreen.classList.remove('active');
-        lobbyScreen.classList.add('active');
+        if (roomLobbyScreen) roomLobbyScreen.classList.remove('active');
+        if (lobbyScreen) lobbyScreen.classList.add('active');
     }
 
     function listenRoom(code) {
@@ -166,25 +172,30 @@ export function initRoom(components) {
     }
 
     // Обработчики кнопок
-    chooseTankBtn.onclick = () => {
-        if (!currentRoomCode || !currentPlayerNick) return;
-        createSelectionScreen((tankId) => {
-            setTank(tankId);
-        }, playerTank);
-    };
+    if (chooseTankBtn) {
+        chooseTankBtn.onclick = () => {
+            if (!currentRoomCode || !currentPlayerNick) return;
+            createSelectionScreen((tankId) => {
+                setTank(tankId);
+            }, playerTank);
+        };
+    }
 
-    readyBtn.onclick = () => {
-        if (!currentRoomCode || !currentPlayerNick) return;
-        if (!playerTank) return;
-        const myReady = document.getElementById('readyBtn').classList.contains('ready');
-        setReady(!myReady);
-    };
+    if (readyBtn) {
+        readyBtn.onclick = () => {
+            if (!currentRoomCode || !currentPlayerNick) return;
+            if (!playerTank) return;
+            const myReady = readyBtn.classList.contains('ready');
+            setReady(!myReady);
+        };
+    }
 
-    leaveRoomBtn.onclick = () => {
-        leaveRoom();
-        // Останавливаем игру, если она была активна
-        stopGame();
-    };
+    if (leaveRoomBtn) {
+        leaveRoomBtn.onclick = () => {
+            leaveRoom();
+            stopGame();
+        };
+    }
 
     // Функции для внешнего использования
     function setPlayerNick(nick) {
@@ -213,14 +224,14 @@ export function initRoom(components) {
             });
 
             currentRoomCode = code;
-            roomCodeRoomLobby.textContent = code;
-            roomCodeDisplay.textContent = code;
-            copyBtn.style.display = 'inline-block';
+            if (roomCodeRoomLobby) roomCodeRoomLobby.textContent = code;
+            if (roomCodeDisplay) roomCodeDisplay.textContent = code;
+            if (copyBtn) copyBtn.style.display = 'inline-block';
             listenRoom(code);
 
             // Показываем комнатный лобби, скрываем основной
-            lobbyScreen.classList.remove('active');
-            roomLobbyScreen.classList.add('active');
+            if (lobbyScreen) lobbyScreen.classList.remove('active');
+            if (roomLobbyScreen) roomLobbyScreen.classList.add('active');
         } catch (err) {
             console.error(err);
             alert('Ошибка создания комнаты');
@@ -242,13 +253,13 @@ export function initRoom(components) {
             });
 
             currentRoomCode = code;
-            roomCodeRoomLobby.textContent = code;
-            roomCodeDisplay.textContent = code;
-            copyBtn.style.display = 'inline-block';
+            if (roomCodeRoomLobby) roomCodeRoomLobby.textContent = code;
+            if (roomCodeDisplay) roomCodeDisplay.textContent = code;
+            if (copyBtn) copyBtn.style.display = 'inline-block';
             listenRoom(code);
 
-            lobbyScreen.classList.remove('active');
-            roomLobbyScreen.classList.add('active');
+            if (lobbyScreen) lobbyScreen.classList.remove('active');
+            if (roomLobbyScreen) roomLobbyScreen.classList.add('active');
         } catch (err) {
             console.error(err);
             alert('Ошибка присоединения');
