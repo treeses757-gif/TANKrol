@@ -27,7 +27,6 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Показ выбора танка
     async function showTankSelection() {
         if (playerTank) return;
         console.log('Показываем экран выбора танка');
@@ -40,7 +39,6 @@ export function initRoom(components) {
         });
     }
 
-    // Запуск игры, если оба выбрали танки
     async function tryStartGame() {
         const roomRef = ref(db, `rooms/${currentRoomCode}`);
         const snap = await get(roomRef);
@@ -50,19 +48,19 @@ export function initRoom(components) {
         const players = Object.keys(data.players || {});
         const tanks = data.tanks || {};
 
-        console.log('tryStartGame: players', players, 'tanks', tanks, 'gameActive', gameActive);
+        console.log('tryStartGame:', players, tanks, 'gameActive', gameActive);
 
         if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
             if (gameActive) {
-                console.log('Игра уже активна');
+                console.log('Игра уже активна, пропускаем');
                 return;
             }
 
-            // Если у нас нет выбранного танка, но в Firebase есть – используем его
             if (!playerTank) {
                 playerTank = tanks[currentPlayerNick];
                 if (!playerTank) {
                     console.log('Нет танка для текущего игрока');
+                    setTimeout(() => tryStartGame(), 500);
                     return;
                 }
             }
@@ -91,6 +89,11 @@ export function initRoom(components) {
         } else {
             if (playerTank) {
                 showWaitingMessage();
+            }
+            // Если есть два игрока и оба танка выбраны, но по какой-то причине не сработало, повторяем
+            if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
+                console.log('Условия выполнены, но игра не запущена, повторная попытка через 1 секунду');
+                setTimeout(() => tryStartGame(), 1000);
             }
         }
     }
