@@ -1,6 +1,6 @@
 import { db } from './firebase.js';
 import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-import { startGame, listenGameState, loadMap, setTanks, gameActive } from './game.js';
+import { startGame, listenGameState, loadMap, gameActive } from './game.js';
 import { getRandomMap } from './maps.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
 import { createSelectionScreen } from './selection.js';
