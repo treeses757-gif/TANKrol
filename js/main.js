@@ -1,16 +1,16 @@
 import './firebase.js';
 import { initAuth } from './auth.js';
 import { initRoom } from './room.js';
-import { initGame, startGame, stopGame, setCurrentRoom, listenGameState, gameActive } from './game.js';
+import { initGame, startGame, stopGame, setCurrentRoom, listenGameState } from './game.js';
 
 // Элементы DOM
 const authScreen = document.getElementById('auth-screen');
 const lobbyScreen = document.getElementById('lobby');
 const gameScreen = document.getElementById('game');
-const gameOverScreen = document.getElementById('game-over');          // новое
-const gameoverMessage = document.getElementById('gameover-message');  // новое
-const restartBtn = document.getElementById('restart-btn');            // новое
-const restartStatus = document.getElementById('restart-status');      // новое
+const gameOverScreen = document.getElementById('game-over');
+const gameoverMessage = document.getElementById('gameover-message');
+const restartBtn = document.getElementById('restart-btn');
+const restartStatus = document.getElementById('restart-status');
 
 const loginForm = document.getElementById('login-form');
 const registerForm = document.getElementById('register-form');
