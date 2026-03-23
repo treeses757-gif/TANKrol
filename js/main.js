@@ -3,7 +3,6 @@ import { initAuth } from './auth.js';
 import { initRoom } from './room.js';
 import { initGame, startGame, stopGame, setCurrentRoom, listenGameState } from './game.js';
 
-// Элементы DOM
 const authScreen = document.getElementById('auth-screen');
 const lobbyScreen = document.getElementById('lobby');
 const gameScreen = document.getElementById('game');
@@ -82,6 +81,6 @@ roomHandlers.setPlayerNick(currentPlayerNick);
 
 window.addEventListener('beforeunload', () => {
     if (currentPlayerNick && roomHandlers.getRoomCode()) {
-        // очистка при необходимости
+        // очистка
     }
 });
