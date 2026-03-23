@@ -5,7 +5,7 @@ import { initMobileControls, getJoystickDirection, removeMobileControls, setActi
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_HALF, BULLET_RADIUS } from './config.js';
 import { tanks } from './tanks.js';
 
-export let gameActive = false;
+export let gameActive = false; // экспортируем для использования в room.js
 let myPos = { x: 200, y: 200 };
 let enemyPos = { x: 600, y: 200 };
 let enemyNick = null;
@@ -137,19 +137,15 @@ export function initGame(components) {
     resizeCanvas();
 
     if (returnToRoomBtn) {
-        returnToRoomBtn.addEventListener('click', () => {
+        returnToRoomBtn.addEventListener('click', async () => {
             if (!currentRoomCode) return;
-            // Удаляем gameState, возвращаем в лобби
-            set(ref(db, `rooms/${currentRoomCode}/gameState`), null);
+            // Удаляем gameState и готовность, возвращаем в лобби
+            await set(ref(db, `rooms/${currentRoomCode}/gameState`), null);
+            await update(ref(db), { [`rooms/${currentRoomCode}/ready`]: null });
             gameActive = false;
             gameScreenEl.classList.remove('active');
             lobbyScreenEl.classList.add('active');
-            // Очищаем эффекты
-            myBullets = [];
-            enemyBullets = [];
-            boomerangBullets = [];
-            winner = null;
-            // Показываем кнопки выбора танка и готовности (они будут показаны в room.js)
+            // Показываем кнопки лобби
             const tankSelectBtn = document.getElementById('tankSelectBtn');
             const readyBtn = document.getElementById('readyBtn');
             if (tankSelectBtn) tankSelectBtn.style.display = 'inline-block';
