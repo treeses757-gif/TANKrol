@@ -1,16 +1,14 @@
 import { db } from './firebase.js';
 import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-import { startGame, listenGameState, gameActive, loadMap, setTanks } from './game.js';
+import { startGame, listenGameState, loadMap, setTanks } from './game.js';
 import { getRandomMap } from './maps.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
-import { createSelectionScreen, showWaitingMessage, hideWaitingMessage } from './selection.js';
+import { tankList } from './tanks.js'; // импортируем список танков
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
 let roomListener = null;
-let playerTank = null;
-let selectionShown = false;
-let waitingForStart = false;
+let playerTank = null; // будет установлен автоматически
 
 export function initRoom(components) {
     const {
@@ -29,20 +27,9 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    async function showTankSelectionAndWait() {
-        if (selectionShown) return;
-        selectionShown = true;
-        console.log('Показываем экран выбора танка');
-        createSelectionScreen(async (tankId) => {
-            console.log('Выбран танк:', tankId);
-            playerTank = tankId;
-            // Сохраняем выбор танка в Firebase
-            await update(ref(db), {
-                [`rooms/${currentRoomCode}/tanks/${currentPlayerNick}`]: tankId
-            });
-            // Проверяем, можно ли начать игру
-            await checkAndStartGame();
-        });
+    // Автоматически назначаем танк игроку (можно рандомный, но для простоты – первый из списка)
+    function assignDefaultTank() {
+        return tankList[0]; // например, 'phantom'
     }
 
     async function checkAndStartGame() {
@@ -57,11 +44,10 @@ export function initRoom(components) {
         console.log('Игроки:', players);
         console.log('Выбранные танки:', tanksData);
 
-        // Если оба игрока выбрали танки и gameState существует (позиции созданы)
+        // Если оба игрока есть и оба имеют танки (которые мы назначим)
         if (players.length === 2 && tanksData[players[0]] && tanksData[players[1]]) {
             // Убедимся, что gameState не null
             if (!data.gameState) {
-                // Создаём начальные позиции, если их нет
                 const pos1 = { x: 100, y: 100 };
                 const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
                 const gameState = {
@@ -73,21 +59,13 @@ export function initRoom(components) {
             }
 
             // Запускаем игру, если она ещё не активна
-            if (!gameActive && !waitingForStart) {
-                waitingForStart = true;
-                const enemyNick = players.find(n => n !== currentPlayerNick);
-                const enemyTank = tanksData[enemyNick];
-                setTanks(currentPlayerNick, playerTank, enemyNick, enemyTank);
-                loadMap(currentRoomCode);
-                startGame(currentRoomCode, currentPlayerNick, playerTank, enemyTank);
-                listenGameState(currentRoomCode, currentPlayerNick);
-                if (onRoomJoined) onRoomJoined(currentRoomCode);
-                hideWaitingMessage();
-                waitingForStart = false;
-            }
-        } else if (playerTank) {
-            // Ждём выбора соперника
-            showWaitingMessage();
+            const enemyNick = players.find(n => n !== currentPlayerNick);
+            const enemyTank = tanksData[enemyNick];
+            setTanks(currentPlayerNick, playerTank, enemyNick, enemyTank);
+            loadMap(currentRoomCode);
+            startGame(currentRoomCode, currentPlayerNick, playerTank, enemyTank);
+            listenGameState(currentRoomCode, currentPlayerNick);
+            if (onRoomJoined) onRoomJoined(currentRoomCode);
         }
     }
 
@@ -182,17 +160,27 @@ export function initRoom(components) {
                 console.log('Созданы начальные позиции');
             }
 
-            // Показываем выбор танка, если мы ещё не выбрали и оба игрока на месте
-            if (count === 2 && currentPlayerNick && !playerTank && !selectionShown) {
-                console.log('Оба игрока на месте, показываем выбор танка');
-                showTankSelectionAndWait();
+            // Назначаем танки, если ещё не назначены
+            const tanksData = data.tanks || {};
+            if (count === 2 && currentPlayerNick && !playerTank) {
+                // Назначаем танк текущему игроку, если его ещё нет
+                if (!tanksData[currentPlayerNick]) {
+                    const defaultTank = assignDefaultTank();
+                    await update(ref(db), {
+                        [`rooms/${code}/tanks/${currentPlayerNick}`]: defaultTank
+                    });
+                    playerTank = defaultTank;
+                    console.log(`Игроку ${currentPlayerNick} назначен танк ${defaultTank}`);
+                } else {
+                    playerTank = tanksData[currentPlayerNick];
+                }
             }
 
-            // Проверяем, выбрали ли оба танки, и запускаем игру, если нужно
-            const tanksData = data.tanks || {};
-            if (count === 2 && tanksData[players[0]] && tanksData[players[1]] && data.gameState && !gameActive) {
+            // Проверяем, есть ли танки у обоих игроков, и запускаем игру
+            const allPlayers = Object.keys(players);
+            if (count === 2 && tanksData[allPlayers[0]] && tanksData[allPlayers[1]] && data.gameState) {
                 if (currentPlayerNick && playerTank) {
-                    console.log('Оба выбрали танки, запускаем игру');
+                    console.log('Оба игрока имеют танки, запускаем игру');
                     await checkAndStartGame();
                 }
             }
@@ -205,8 +193,6 @@ export function initRoom(components) {
         }
         currentRoomCode = null;
         playerTank = null;
-        selectionShown = false;
-        waitingForStart = false;
         if (roomListener) roomListener();
         if (onRoomLeft) onRoomLeft();
     }
