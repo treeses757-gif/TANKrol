@@ -185,7 +185,7 @@ export function initRoom(components) {
         copyBtn.style.display = 'none';
     }
 
-    export function resetGameStarted() {
+    function resetGameStarted() {
         gameStarted = false;
     }
 
@@ -274,6 +274,6 @@ export function initRoom(components) {
         setPlayerNick,
         leaveRoom,
         getRoomCode,
-        resetGameStarted
+        resetGameStarted   // теперь доступен через объект
     };
 }
