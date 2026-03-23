@@ -9,15 +9,14 @@ const lobbyScreen = document.getElementById('lobby');
 const gameScreen = document.getElementById('game');
 const gameOverScreen = document.getElementById('game-over');
 const gameoverMessage = document.getElementById('gameover-message');
-const restartBtn = document.getElementById('restart-btn');
-const restartStatus = document.getElementById('restart-status');
+const returnToRoomBtn = document.getElementById('return-to-room-btn');
 
 const loginForm = document.getElementById('login-form');
 const registerForm = document.getElementById('register-form');
 const showLoginBtn = document.getElementById('show-login');
 const showRegisterBtn = document.getElementById('show-register');
 const userNickSpan = document.getElementById('user-nick');
-const logoutBtn = document.getElementById('logoutBtn');
+const logoutBtn = document.getElementById('logoutBtn'); // кнопка выхода из аккаунта
 
 const createBtn = document.getElementById('createBtn');
 const joinBtn = document.getElementById('joinBtn');
@@ -35,14 +34,12 @@ if (currentPlayerNick) {
     userNickSpan.textContent = currentPlayerNick;
 }
 
-// Инициализация игры с новыми элементами
 initGame({
     gameScreen,
     lobbyScreen,
     gameOverScreen,
     gameoverMessage,
-    restartBtn,
-    restartStatus
+    returnToRoomBtn
 });
 
 const roomHandlers = initRoom({
@@ -87,6 +84,6 @@ roomHandlers.setPlayerNick(currentPlayerNick);
 
 window.addEventListener('beforeunload', () => {
     if (currentPlayerNick && roomHandlers.getRoomCode()) {
-        // очистка при необходимости
+        // можно очистить комнату
     }
 });
