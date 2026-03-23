@@ -54,7 +54,7 @@ let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, returnToRo
 let animationFrameId = null;
 let roomHandlersRef = null;
 
-// Функции отрисовки
+// Функции отрисовки (без изменений)
 function drawTank(x, y, tankId, direction, isPhantom = false) {
     const tank = tanks[tankId];
     if (!tank) return;
@@ -122,8 +122,13 @@ export function initGame(components, roomHandlers) {
     ctx = canvas.getContext('2d');
     useCamera = !isMobile;
 
-    canvas.addEventListener('touchstart', (e) => e.preventDefault());
-    canvas.addEventListener('touchmove', (e) => e.preventDefault());
+    // Предотвращаем прокрутку страницы на мобильных устройствах
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+    });
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+    });
 
     window.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -132,14 +137,15 @@ export function initGame(components, roomHandlers) {
         if (e.code === 'KeyE') { e.preventDefault(); activateTankAbility(); }
         if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) e.preventDefault();
     });
-    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+    window.addEventListener('keyup', (e) => {
+        keys[e.code] = false;
+    });
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
     if (returnToRoomBtn) {
         returnToRoomBtn.addEventListener('click', async () => {
             if (!currentRoomCode) return;
-            console.log('[game] Возврат в комнату, удаляем gameState');
             await set(ref(db, `rooms/${currentRoomCode}/gameState`), null);
             gameActive = false;
             gameScreenEl.classList.remove('active');
@@ -229,15 +235,10 @@ export function setTanks(myNick, myTankId, enemyNickParam, enemyTankId) {
     myTank = myTankId;
     enemyNick = enemyNickParam;
     enemyTank = enemyTankId;
-    console.log('[game] setTanks: myTank=' + myTankId + ', enemyTank=' + enemyTankId);
 }
 
 export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
-    console.log('[game] startGame вызван', roomCode, playerNick, tankId, enemyTankId);
-    if (!gameScreenEl || !lobbyScreenEl) {
-        console.error('[game] gameScreenEl или lobbyScreenEl не определены');
-        return;
-    }
+    if (!gameScreenEl || !lobbyScreenEl) return;
     if (isMobile && window.innerWidth < window.innerHeight) {
         alert('Пожалуйста, поверните устройство горизонтально');
         return;
@@ -250,9 +251,6 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
         if (gameState[playerNick]) myPos = gameState[playerNick];
         const enemyNickLocal = Object.keys(gameState).find(n => n !== playerNick);
         if (enemyNickLocal) enemyPos = gameState[enemyNickLocal];
-        console.log('[game] загружены позиции: myPos=', myPos, 'enemyPos=', enemyPos);
-    } else {
-        console.warn('[game] gameState не найден, использую позиции по умолчанию');
     }
 
     lobbyScreenEl.classList.remove('active');
@@ -283,7 +281,6 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
 
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     animationFrameId = requestAnimationFrame(gameLoop);
-    console.log('[game] игровой цикл запущен');
 }
 
 export function stopGame() {
@@ -299,7 +296,6 @@ export function stopGame() {
 }
 
 function showGameOver(message) {
-    console.log('[game] Game over: ' + message);
     gameActive = false;
     gameScreenEl.classList.remove('active');
     gameOverScreenEl.classList.add('active');
@@ -310,7 +306,6 @@ function showGameOver(message) {
 export function setCurrentRoom(roomCode, playerNick) {
     currentRoomCode = roomCode;
     currentPlayerNick = playerNick;
-    console.log('[game] setCurrentRoom: ' + roomCode + ', player: ' + playerNick);
 }
 
 export function listenGameState(code, playerNick) {
@@ -386,7 +381,6 @@ export function listenGameState(code, playerNick) {
 export function loadMap(roomCode) {
     onValue(ref(db, `rooms/${roomCode}/map`), (snap) => {
         obstacles = snap.val() || [];
-        console.log('[game] карта загружена, препятствий: ' + obstacles.length);
     }, { onlyOnce: true });
 }
 
@@ -422,11 +416,13 @@ function updateGame(deltaTime) {
     let newX = myPos.x, newY = myPos.y;
     let moved = false;
 
+    // Обработка клавиатуры
     if (keys['ArrowUp'] || keys['KeyW']) { newY -= move; lastMoveDir = { x: 0, y: -1 }; moved = true; }
     if (keys['ArrowDown'] || keys['KeyS']) { newY += move; lastMoveDir = { x: 0, y: 1 }; moved = true; }
     if (keys['ArrowLeft'] || keys['KeyA']) { newX -= move; lastMoveDir = { x: -1, y: 0 }; moved = true; }
     if (keys['ArrowRight'] || keys['KeyD']) { newX += move; lastMoveDir = { x: 1, y: 0 }; moved = true; }
 
+    // Обработка мобильного джойстика
     if (isMobile && mobileControlsActive) {
         const jDir = getJoystickDirection();
         if (jDir.x !== 0 || jDir.y !== 0) {
@@ -437,9 +433,7 @@ function updateGame(deltaTime) {
         }
     }
 
-    if (moved) {
-        //console.log('[game] движение: newX=' + newX + ', newY=' + newY);
-    }
+    if (!moved) return;
 
     if (!mySpiderActive) {
         newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
@@ -449,6 +443,7 @@ function updateGame(deltaTime) {
         newX = Math.max(0, Math.min(VIRTUAL_WIDTH, newX));
         newY = Math.max(0, Math.min(VIRTUAL_HEIGHT, newY));
     }
+
     if (newX !== myPos.x || newY !== myPos.y) {
         myPos = { x: newX, y: newY };
         update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
