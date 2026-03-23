@@ -8,7 +8,7 @@ export function initMobileControls(canvas, onShoot) {
     
     const controlsContainer = document.createElement('div');
     controlsContainer.id = 'mobile-controls';
-    controlsContainer.style.position = 'absolute';
+    controlsContainer.style.position = 'fixed';
     controlsContainer.style.bottom = '20px';
     controlsContainer.style.left = '0';
     controlsContainer.style.width = '100%';
@@ -17,6 +17,7 @@ export function initMobileControls(canvas, onShoot) {
     controlsContainer.style.padding = '0 20px';
     controlsContainer.style.boxSizing = 'border-box';
     controlsContainer.style.pointerEvents = 'none';
+    controlsContainer.style.zIndex = '1000';
     
     const joystick = document.createElement('div');
     joystick.id = 'joystick';
@@ -27,6 +28,7 @@ export function initMobileControls(canvas, onShoot) {
     joystick.style.border = '2px solid white';
     joystick.style.position = 'relative';
     joystick.style.pointerEvents = 'auto';
+    joystick.style.touchAction = 'none';
     
     const joystickKnob = document.createElement('div');
     joystickKnob.id = 'joystick-knob';
@@ -38,6 +40,7 @@ export function initMobileControls(canvas, onShoot) {
     joystickKnob.style.top = '50%';
     joystickKnob.style.left = '50%';
     joystickKnob.style.transform = 'translate(-50%, -50%)';
+    joystickKnob.style.touchAction = 'none';
     joystick.appendChild(joystickKnob);
     
     const shootBtn = document.createElement('div');
@@ -54,6 +57,7 @@ export function initMobileControls(canvas, onShoot) {
     shootBtn.style.fontSize = '20px';
     shootBtn.style.fontWeight = 'bold';
     shootBtn.style.pointerEvents = 'auto';
+    shootBtn.style.touchAction = 'manipulation';
     shootBtn.textContent = 'FIRE';
     
     const abilityBtn = document.createElement('div');
@@ -70,6 +74,7 @@ export function initMobileControls(canvas, onShoot) {
     abilityBtn.style.fontSize = '20px';
     abilityBtn.style.fontWeight = 'bold';
     abilityBtn.style.pointerEvents = 'auto';
+    abilityBtn.style.touchAction = 'manipulation';
     abilityBtn.textContent = 'SKILL';
     
     controlsContainer.appendChild(joystick);
@@ -78,6 +83,7 @@ export function initMobileControls(canvas, onShoot) {
     document.body.appendChild(controlsContainer);
     
     let touchId = null;
+    let startX = 0, startY = 0;
     
     const handleTouchStart = (e) => {
         e.preventDefault();
@@ -87,6 +93,8 @@ export function initMobileControls(canvas, onShoot) {
         const centerY = rect.top + rect.height/2;
         touchId = touch.identifier;
         joystickActive = true;
+        startX = touch.clientX;
+        startY = touch.clientY;
         updateJoystick(touch.clientX, touch.clientY, centerX, centerY);
     };
     
@@ -109,6 +117,7 @@ export function initMobileControls(canvas, onShoot) {
             joystickDir = { x: 0, y: 0 };
             const knob = document.getElementById('joystick-knob');
             if (knob) knob.style.transform = 'translate(-50%, -50%)';
+            touchId = null;
         }
     };
     
