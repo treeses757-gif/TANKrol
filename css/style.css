@@ -28,7 +28,7 @@ body {
 .auth-container {
     background: rgba(255, 255, 255, 0.95);
     border-radius: 20px;
-    padding: 40px;
+    padding: 40px 20px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(10px);
 }
@@ -82,8 +82,6 @@ body {
     background-color: #ffffff !important;
     color: #000000 !important;
     line-height: normal;
-    opacity: 1;
-    visibility: visible;
 }
 
 .auth-form input:focus {
@@ -119,7 +117,7 @@ body {
 .lobby-container {
     background: rgba(255, 255, 255, 0.95);
     border-radius: 20px;
-    padding: 40px;
+    padding: 30px 20px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     text-align: center;
 }
@@ -130,7 +128,7 @@ body {
 }
 
 .lobby-actions {
-    margin: 30px 0;
+    margin: 25px 0;
 }
 
 .primary-btn {
@@ -138,7 +136,7 @@ body {
     color: white;
     border: none;
     border-radius: 10px;
-    padding: 15px 40px;
+    padding: 14px 20px;
     font-size: 18px;
     font-weight: 600;
     cursor: pointer;
@@ -146,8 +144,8 @@ body {
     margin-bottom: 15px;
 }
 
-.primary-btn:hover {
-    transform: translateY(-2px);
+.primary-btn:active {
+    transform: scale(0.98);
 }
 
 .join-section {
@@ -157,12 +155,13 @@ body {
 
 #roomCodeInput {
     flex: 2;
-    padding: 12px;
+    padding: 14px;
     border: 2px solid #ccc;
-    border-radius: 8px;
-    font-size: 16px;
+    border-radius: 10px;
+    font-size: 18px;
     background-color: white;
     color: black;
+    text-align: center;
 }
 
 .secondary-btn {
@@ -171,7 +170,7 @@ body {
     color: white;
     border: none;
     border-radius: 10px;
-    padding: 12px;
+    padding: 14px;
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
@@ -186,11 +185,11 @@ body {
 }
 
 #roomCodeDisplay {
-    font-size: 32px;
+    font-size: 28px;
     font-weight: bold;
     color: #333;
     background: #f0f0f0;
-    padding: 10px 20px;
+    padding: 8px 16px;
     border-radius: 10px;
     min-width: 150px;
 }
@@ -199,30 +198,28 @@ body {
     background: #4CAF50;
     color: white;
     border: none;
-    border-radius: 5px;
-    padding: 10px 15px;
+    border-radius: 8px;
+    padding: 8px 15px;
     cursor: pointer;
     font-size: 16px;
-}
-
-#copyBtn:hover {
-    background: #45a049;
 }
 
 #status {
     margin-top: 15px;
     color: #666;
+    font-size: 14px;
 }
 
 .logout-btn {
-    margin-top: 20px;
+    margin-top: 15px;
     background: none;
     border: 2px solid #e0e0e0;
     border-radius: 10px;
-    padding: 10px 30px;
+    padding: 10px 25px;
     font-size: 14px;
     cursor: pointer;
     color: #666;
+    width: 100%;
 }
 
 .logout-btn:hover {
@@ -241,7 +238,7 @@ body {
     height: 100vh;
     background: #2a6f2a;
     display: block;
-    image-rendering: crisp-edges; /* для чёткости */
+    image-rendering: crisp-edges;
 }
 
 #roomInfo {
@@ -254,11 +251,12 @@ body {
     border-radius: 20px;
     font-size: 14px;
 }
-/* Экран победы/поражения */
+
+/* Экран окончания игры */
 .gameover-container {
     background: rgba(255, 255, 255, 0.95);
     border-radius: 20px;
-    padding: 40px;
+    padding: 40px 20px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     text-align: center;
     max-width: 400px;
@@ -271,34 +269,18 @@ body {
     color: #333;
 }
 
-#restart-status {
-    margin-top: 15px;
-    color: #666;
-    font-size: 16px;
-}
-/* Room lobby */
-.room-lobby-container {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 20px;
-    padding: 40px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    text-align: center;
-    width: 100%;
-    max-width: 500px;
-    margin: 0 auto;
-}
-
+/* Список игроков */
 .players-list {
     margin: 20px 0;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 12px;
 }
 
 .player-card {
     background: #f5f5f5;
     border-radius: 15px;
-    padding: 15px;
+    padding: 12px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -313,18 +295,18 @@ body {
 
 .player-name {
     font-weight: bold;
-    font-size: 18px;
+    font-size: 16px;
 }
 
 .player-tank {
-    font-size: 14px;
+    font-size: 12px;
     color: #666;
 }
 
 .ready-indicator {
-    padding: 5px 10px;
+    padding: 4px 10px;
     border-radius: 20px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: bold;
 }
 
@@ -340,7 +322,7 @@ body {
 
 .room-buttons {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     justify-content: center;
     margin-top: 20px;
 }
@@ -350,96 +332,56 @@ body {
     color: white;
     border: none;
     border-radius: 10px;
-    padding: 12px 20px;
-    font-size: 16px;
-    font-weight: bold;
-    cursor: pointer;
-}
-
-.ready-btn.ready {
-    background: #4CAF50;
-}
-
-.room-status {
-    margin-top: 15px;
-    color: #666;
-    font-size: 14px;
-}
-
-@media (max-width: 600px) {
-    .player-card {
-        flex-direction: column;
-        align-items: stretch;
-        text-align: center;
-    }
-    .room-buttons {
-        flex-direction: column;
-    }
-}
-/* Добавления для лобби */
-.players-list {
-    margin: 20px 0;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-}
-.player-card {
-    background: #f5f5f5;
-    border-radius: 15px;
-    padding: 15px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-.player-info {
-    flex: 1;
-    text-align: left;
-}
-.player-name {
-    font-weight: bold;
+    padding: 14px 20px;
     font-size: 18px;
-}
-.player-tank {
-    font-size: 14px;
-    color: #666;
-}
-.ready-indicator {
-    padding: 5px 10px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: bold;
-}
-.ready-true {
-    background: #4CAF50;
-    color: white;
-}
-.ready-false {
-    background: #f44336;
-    color: white;
-}
-.room-buttons {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    margin-top: 20px;
-}
-.ready-btn {
-    background: #2196F3;
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 12px 20px;
-    font-size: 16px;
     font-weight: bold;
     cursor: pointer;
+    flex: 1;
 }
+
 .ready-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
 #tankSelectBtn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* Мобильные адаптации */
+@media (max-width: 600px) {
+    .auth-container, .lobby-container, .gameover-container {
+        padding: 25px 15px;
+    }
+
+    .auth-container h1 {
+        font-size: 1.8em;
+        margin-bottom: 20px;
+    }
+
+    .primary-btn, .secondary-btn, .ready-btn {
+        padding: 12px;
+        font-size: 16px;
+    }
+
+    .join-section {
+        flex-direction: column;
+    }
+
+    #roomCodeInput {
+        text-align: center;
+    }
+
+    .player-card {
+        padding: 10px;
+    }
+
+    .player-name {
+        font-size: 14px;
+    }
+
+    .ready-indicator {
+        font-size: 11px;
+    }
 }
