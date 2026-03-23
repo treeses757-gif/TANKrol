@@ -14,7 +14,6 @@ let playerReady = false;
 let selectionShown = false;
 let gameStarted = false;
 
-// DOM элементы
 let tankSelectBtn, readyBtn, leaveRoomBtn, roomPlayersList;
 let createBtn, joinBtn, roomCodeInput, roomCodeDisplay, roomCodeSpan, copyBtn, statusDiv;
 
@@ -36,7 +35,6 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Обновление UI лобби
     function updateRoomUI(players, tanksData, readyStatus) {
         if (!roomPlayersList) return;
         roomPlayersList.innerHTML = '';
@@ -138,14 +136,12 @@ export function initRoom(components) {
             statusDiv.textContent = `Игроков: ${players.length}/2`;
             updateRoomUI(players, data.tanks || {}, data.ready || {});
 
-            // Если gameState удалён, сбрасываем флаг и показываем кнопки
             if (!data.gameState) {
                 if (gameStarted) gameStarted = false;
                 if (tankSelectBtn) tankSelectBtn.style.display = 'inline-block';
                 if (readyBtn) readyBtn.style.display = 'inline-block';
             }
 
-            // Если есть gameState и игра ещё не активна, запускаем
             if (data.gameState && !gameActive && !gameStarted) {
                 gameStarted = true;
                 const tanksData = data.tanks || {};
