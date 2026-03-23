@@ -1,4 +1,3 @@
-// game.js (исправленная версия)
 import { db } from './firebase.js';
 import { ref, onValue, update, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 import { isPositionFree, circleRectCollide } from './utils.js';
@@ -24,9 +23,8 @@ let winner = null;
 let myTank = null;
 let enemyTank = null;
 
-// Эффекты способностей
 let phantomActive = false;
-let phantomData = null;          // { startPos, path, lastShoot }
+let phantomData = null;
 let reflectActive = false;
 let spiderActive = false;
 let lastAbilityTime = 0;
@@ -34,9 +32,7 @@ const ABILITY_COOLDOWN = 8;
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
-
 let enemyTurretDir = { x: 0, y: 1 };
-
 const SHOOT_DELAY = 0.5;
 let lastShootTime = 0;
 
@@ -45,7 +41,6 @@ let mobileControlsActive = false;
 
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, restartBtnEl, restartStatusEl;
 
-// Вспомогательные функции отрисовки
 function drawTank(x, y, tankId, direction, isPhantom = false) {
     const tank = tanks[tankId];
     if (!tank) return;
@@ -128,7 +123,7 @@ export function initGame(components) {
     if (restartBtnEl) {
         restartBtnEl.addEventListener('click', () => {
             if (!currentRoomCode || !currentPlayerNick) return;
-            update(ref(db), { [`rooms/${currentRoomCode}/gameState/restart/${currentPlayerNick}`]: true });
+            update(ref(db, `rooms/${currentRoomCode}/gameState/restart`), { [currentPlayerNick]: true });
             restartBtnEl.disabled = true;
             restartStatusEl.textContent = 'Ожидание соперника...';
         });
@@ -156,10 +151,10 @@ function shoot() {
         vy: lastMoveDir.y * BULLET_SPEED,
         owner: currentPlayerNick,
         key: bulletKey,
-        type: 'normal'          // добавим тип
+        type: 'normal'
     };
     myBullets.push(bullet);
-    update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: bullet });
+    update(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`), bullet);
 }
 
 async function activateTankAbility() {
@@ -190,7 +185,6 @@ async function activateTankAbility() {
             setTimeout(() => { spiderActive = false; }, 5000);
             break;
         case 'boomer':
-            // Создаём бумеранг и отправляем в Firebase
             const bulletKey = Date.now() + '_' + Math.random().toString(36).substr(2, 5);
             const boomerangBullet = {
                 x: myPos.x,
@@ -205,13 +199,12 @@ async function activateTankAbility() {
                 startDir: { x: lastMoveDir.x, y: lastMoveDir.y }
             };
             myBullets.push(boomerangBullet);
-            await update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: boomerangBullet });
+            await update(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`), boomerangBullet);
             break;
     }
 
-    // Синхронизируем активацию способности (чтобы противник видел эффекты)
-    await update(ref(db), {
-        [`rooms/${currentRoomCode}/gameState/abilityActivation`]: {
+    await update(ref(db, `rooms/${currentRoomCode}/gameState`), {
+        abilityActivation: {
             player: currentPlayerNick,
             ability: tankId,
             timestamp: now
@@ -284,15 +277,13 @@ export function listenGameState(code, playerNick) {
         const state = snap.val();
         if (!state) return;
 
-        // Обновляем позиции: НЕ перезаписываем свою, только врага
         for (let id in state) {
-            if (id === playerNick) continue; // игнорируем свою позицию
+            if (id === playerNick) continue;
             if (id !== 'bullets' && id !== 'restart' && id !== 'winner' && id !== 'abilityActivation') {
                 enemyPos = state[id];
             }
         }
 
-        // Обработка пуль
         if (state.bullets) {
             const currentKeys = new Set();
             for (let key in state.bullets) {
@@ -303,7 +294,6 @@ export function listenGameState(code, playerNick) {
                         enemyBullets.push({ ...bullet });
                     }
                 } else {
-                    // Если это наша пуля, но её нет в myBullets, добавляем (например, после перезапуска)
                     if (!myBullets.some(b => b.key === key)) {
                         myBullets.push({ ...bullet });
                     }
@@ -316,7 +306,6 @@ export function listenGameState(code, playerNick) {
             myBullets = [];
         }
 
-        // Обработка активации способностей соперника
         if (state.abilityActivation && state.abilityActivation.player !== playerNick) {
             const ability = state.abilityActivation.ability;
             if (ability === 'guardian') {
@@ -326,8 +315,7 @@ export function listenGameState(code, playerNick) {
                 spiderActive = true;
                 setTimeout(() => { spiderActive = false; }, 5000);
             }
-            // Удаляем запись, чтобы не применять повторно
-            update(ref(db), { [`rooms/${code}/gameState/abilityActivation`]: null });
+            update(ref(db, `rooms/${code}/gameState`), { abilityActivation: null });
         }
 
         if (state.winner) {
@@ -455,17 +443,15 @@ function updateGame(deltaTime) {
     if (newX !== myPos.x || newY !== myPos.y) {
         myPos.x = newX;
         myPos.y = newY;
-        update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
+        update(ref(db, `rooms/${currentRoomCode}/gameState/${currentPlayerNick}`), myPos);
     }
 }
 
 function updateBullets(deltaTime) {
     if (winner) return;
 
-    // Движение пуль
     for (let b of myBullets) {
         if (b.type === 'boomerang') {
-            // Бумеранг: летит 1 секунду вперёд, потом возвращается
             const now = Date.now() / 1000;
             const age = now - (b.startTime || now);
             if (age < 1.0) {
@@ -511,42 +497,35 @@ function updateBullets(deltaTime) {
         }
     }
 
-    // Отражение щита (только для вражеских пуль)
     if (reflectActive) {
         for (let i = enemyBullets.length - 1; i >= 0; i--) {
             const b = enemyBullets[i];
             const dx = b.x - myPos.x;
             const dy = b.y - myPos.y;
             if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
-                // Меняем направление и владельца
                 b.vx = -b.vx;
                 b.vy = -b.vy;
                 b.owner = currentPlayerNick;
-                // Обновляем в Firebase
                 if (currentRoomCode && b.key) {
-                    update(ref(db), `rooms/${currentRoomCode}/gameState/bullets/${b.key}`, {
+                    update(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`), {
                         vx: b.vx,
                         vy: b.vy,
                         owner: b.owner
                     });
                 }
-                // Переносим в свои пули
                 enemyBullets.splice(i, 1);
                 myBullets.push(b);
             }
         }
     }
 
-    // Свои пули
     for (let i = myBullets.length - 1; i >= 0; i--) {
         const b = myBullets[i];
-        // Удаление за пределами
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             if (currentRoomCode && b.key) remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
             myBullets.splice(i, 1);
             continue;
         }
-        // Столкновение с препятствиями
         let hit = false;
         for (let obs of obstacles) {
             if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
@@ -557,22 +536,19 @@ function updateBullets(deltaTime) {
             }
         }
         if (hit) continue;
-        // Попадание в противника
         const dx = b.x - enemyPos.x;
         const dy = b.y - enemyPos.y;
         if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
             if (currentRoomCode && b.key) remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
             myBullets.splice(i, 1);
-            update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick });
+            update(ref(db, `rooms/${currentRoomCode}/gameState`), { winner: currentPlayerNick });
             gameActive = false;
             return;
         }
     }
 
-    // Вражеские пули
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const b = enemyBullets[i];
-        // Столкновение с препятствиями
         let hit = false;
         for (let obs of obstacles) {
             if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
@@ -583,17 +559,15 @@ function updateBullets(deltaTime) {
             }
         }
         if (hit) continue;
-        // Удаление за пределами
         if (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT) {
             if (currentRoomCode && b.key) remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
             enemyBullets.splice(i, 1);
             continue;
         }
-        // Попадание в меня
         const dx = b.x - myPos.x;
         const dy = b.y - myPos.y;
         if (dx * dx + dy * dy < (TANK_HALF + BULLET_RADIUS) ** 2) {
-            update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: enemyNick });
+            update(ref(db, `rooms/${currentRoomCode}/gameState`), { winner: enemyNick });
             gameActive = false;
             return;
         }
@@ -620,8 +594,7 @@ function updatePhantom(deltaTime) {
             type: 'normal'
         };
         myBullets.push(bullet);
-        // Отправляем в Firebase, чтобы противник видел пули фантома
-        update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: bullet });
+        update(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`), bullet);
         phantomData.lastShoot = now;
     }
 }
@@ -639,7 +612,6 @@ function draw() {
     const scaleX = getScaleX();
     const scaleY = getScaleY();
 
-    // Препятствия
     ctx.fillStyle = '#8B4513';
     obstacles.forEach(obs => {
         const sx = toScreenX(obs.x);
@@ -647,7 +619,6 @@ function draw() {
         ctx.fillRect(sx, sy, obs.width * scaleX, obs.height * scaleY);
     });
 
-    // Пули
     const bulletSize = BULLET_RADIUS * scaleX * 1.5;
     ctx.shadowBlur = 8;
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -672,7 +643,6 @@ function draw() {
     }
     ctx.shadowBlur = 0;
 
-    // Фантомная копия
     if (phantomActive && phantomData && phantomData.path.length > 0) {
         const steps = Math.min(10, phantomData.path.length);
         for (let i = 0; i < steps; i++) {
@@ -681,11 +651,9 @@ function draw() {
         }
     }
 
-    // Танки
     drawTank(enemyPos.x, enemyPos.y, enemyTank, enemyTurretDir);
     drawTank(myPos.x, myPos.y, myTank, lastMoveDir);
 
-    // Интерфейс способности
     const now = Date.now() / 1000;
     const cooldownLeft = Math.max(0, ABILITY_COOLDOWN - (now - lastAbilityTime));
     const tankInfo = tanks[myTank];
