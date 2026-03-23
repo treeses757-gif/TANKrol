@@ -3,12 +3,12 @@ import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/
 import { startGame, listenGameState, loadMap, setTanks } from './game.js';
 import { getRandomMap } from './maps.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
-import { tankList } from './tanks.js'; // импортируем список танков
+import { tankList } from './tanks.js';
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
 let roomListener = null;
-let playerTank = null; // будет установлен автоматически
+let playerTank = null;
 
 export function initRoom(components) {
     const {
@@ -27,40 +27,25 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Автоматически назначаем танк игроку (можно рандомный, но для простоты – первый из списка)
-    function assignDefaultTank() {
-        return tankList[0]; // например, 'phantom'
+    // Назначаем случайный танк для игрока
+    function assignRandomTank() {
+        const randomIndex = Math.floor(Math.random() * tankList.length);
+        return tankList[randomIndex];
     }
 
     async function checkAndStartGame() {
-        console.log('checkAndStartGame вызван');
         const roomRef = ref(db, `rooms/${currentRoomCode}`);
         const snap = await get(roomRef);
         const data = snap.val();
         if (!data) return;
+
         const players = Object.keys(data.players || {});
-        const tanksData = data.tanks || {};
+        const tanks = data.tanks || {};
 
-        console.log('Игроки:', players);
-        console.log('Выбранные танки:', tanksData);
-
-        // Если оба игрока есть и оба имеют танки (которые мы назначим)
-        if (players.length === 2 && tanksData[players[0]] && tanksData[players[1]]) {
-            // Убедимся, что gameState не null
-            if (!data.gameState) {
-                const pos1 = { x: 100, y: 100 };
-                const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
-                const gameState = {
-                    [players[0]]: pos1,
-                    [players[1]]: pos2
-                };
-                await set(ref(db, `rooms/${currentRoomCode}/gameState`), gameState);
-                console.log('Созданы начальные позиции');
-            }
-
-            // Запускаем игру, если она ещё не активна
+        // Если оба игрока есть и у обоих есть танки
+        if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
             const enemyNick = players.find(n => n !== currentPlayerNick);
-            const enemyTank = tanksData[enemyNick];
+            const enemyTank = tanks[enemyNick];
             setTanks(currentPlayerNick, playerTank, enemyNick, enemyTank);
             loadMap(currentRoomCode);
             startGame(currentRoomCode, currentPlayerNick, playerTank, enemyTank);
@@ -90,7 +75,6 @@ export function initRoom(components) {
             roomCodeSpan.textContent = code;
             copyBtn.style.display = 'inline-block';
             listenRoom(code);
-            console.log('Комната создана, код:', code);
         } catch (err) {
             console.error(err);
             alert('Ошибка создания комнаты');
@@ -104,7 +88,6 @@ export function initRoom(components) {
             alert('Введите код из цифр');
             return;
         }
-        console.log('Попытка присоединиться к комнате:', code);
         try {
             const roomRef = ref(db, `rooms/${code}`);
             const snap = await get(roomRef);
@@ -118,7 +101,6 @@ export function initRoom(components) {
             roomCodeSpan.textContent = code;
             copyBtn.style.display = 'inline-block';
             listenRoom(code);
-            console.log('Присоединились, код:', code);
         } catch (err) {
             console.error(err);
             alert('Ошибка присоединения');
@@ -142,46 +124,51 @@ export function initRoom(components) {
             const data = snap.val();
             if (!data) { leaveRoom(); return; }
 
-            const players = data.players || {};
-            const count = Object.keys(players).length;
+            const players = Object.keys(data.players || {});
+            const count = players.length;
             statusDiv.textContent = `Игроков: ${count}/2`;
-            console.log(`Игроков в комнате: ${count}`);
 
-            // Если оба игрока подключились и gameState ещё не создан, создаём
-            if (count === 2 && !data.gameState) {
-                const playerIds = Object.keys(players);
-                const pos1 = { x: 100, y: 100 };
-                const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
-                const gameState = {
-                    [playerIds[0]]: pos1,
-                    [playerIds[1]]: pos2
-                };
-                await set(ref(db, `rooms/${code}/gameState`), gameState);
-                console.log('Созданы начальные позиции');
-            }
-
-            // Назначаем танки, если ещё не назначены
-            const tanksData = data.tanks || {};
-            if (count === 2 && currentPlayerNick && !playerTank) {
-                // Назначаем танк текущему игроку, если его ещё нет
-                if (!tanksData[currentPlayerNick]) {
-                    const defaultTank = assignDefaultTank();
-                    await update(ref(db), {
-                        [`rooms/${code}/tanks/${currentPlayerNick}`]: defaultTank
-                    });
-                    playerTank = defaultTank;
-                    console.log(`Игроку ${currentPlayerNick} назначен танк ${defaultTank}`);
-                } else {
-                    playerTank = tanksData[currentPlayerNick];
+            // Если оба игрока подключились и игра ещё не началась
+            if (count === 2 && data.gameState === null) {
+                // Создаём начальные позиции, если ещё не созданы
+                if (!data.gameState) {
+                    const pos1 = { x: 100, y: 100 };
+                    const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
+                    const gameState = {
+                        [players[0]]: pos1,
+                        [players[1]]: pos2
+                    };
+                    await set(ref(db, `rooms/${code}/gameState`), gameState);
                 }
-            }
 
-            // Проверяем, есть ли танки у обоих игроков, и запускаем игру
-            const allPlayers = Object.keys(players);
-            if (count === 2 && tanksData[allPlayers[0]] && tanksData[allPlayers[1]] && data.gameState) {
-                if (currentPlayerNick && playerTank) {
-                    console.log('Оба игрока имеют танки, запускаем игру');
-                    await checkAndStartGame();
+                // Назначаем танки тем игрокам, у кого их ещё нет
+                const tanks = data.tanks || {};
+                let needUpdate = false;
+                for (let nick of players) {
+                    if (!tanks[nick]) {
+                        const newTank = assignRandomTank();
+                        await update(ref(db), {
+                            [`rooms/${code}/tanks/${nick}`]: newTank
+                        });
+                        needUpdate = true;
+                        if (nick === currentPlayerNick) playerTank = newTank;
+                    } else if (nick === currentPlayerNick) {
+                        playerTank = tanks[nick];
+                    }
+                }
+                if (needUpdate) {
+                    // После обновления танков перепроверяем запуск игры
+                    checkAndStartGame();
+                } else {
+                    // Если танки уже есть, сразу запускаем
+                    checkAndStartGame();
+                }
+            } else if (count === 2 && data.gameState !== null && !gameActive) {
+                // Игра уже начата, но локально ещё не активна – запускаем
+                const tanks = data.tanks || {};
+                if (tanks[currentPlayerNick]) {
+                    playerTank = tanks[currentPlayerNick];
+                    checkAndStartGame();
                 }
             }
         });
