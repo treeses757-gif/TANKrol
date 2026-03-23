@@ -4,10 +4,11 @@ import { isPositionFree, circleRectCollide } from './utils.js';
 import { initMobileControls, getJoystickDirection, removeMobileControls, setActivateAbilityCallback } from './mobile-controls.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_HALF, BULLET_RADIUS } from './config.js';
 import { tanks } from './tanks.js';
+import { resetGameStarted } from './room.js'; // импорт для сброса флага
 
-export let gameActive = false; // экспортируем для использования в room.js
+export let gameActive = false;
 let myPos = { x: 200, y: 200 };
-let enemyPos = { x: 600, y: 200 };
+let enemyPos = { x: 600, y: 600 };
 let enemyNick = null;
 let myBullets = [];
 let enemyBullets = [];
@@ -23,7 +24,7 @@ let winner = null;
 let myTank = null;
 let enemyTank = null;
 
-// Эффекты способностей (разделены)
+// Эффекты способностей
 let myReflectActive = false;
 let enemyReflectActive = false;
 let mySpiderActive = false;
@@ -37,7 +38,7 @@ let enemyPhantomData = null;
 let boomerangBullets = [];
 
 let lastAbilityTime = 0;
-const ABILITY_COOLDOWN = 8;
+const ABILITY_COOLDOWN = 25; // изменено с 8 на 25
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
@@ -50,6 +51,8 @@ const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/
 let mobileControlsActive = false;
 
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, returnToRoomBtn;
+
+let animationFrameId = null;
 
 // Функции отрисовки (без изменений)
 function drawTank(x, y, tankId, direction, isPhantom = false) {
@@ -139,13 +142,14 @@ export function initGame(components) {
     if (returnToRoomBtn) {
         returnToRoomBtn.addEventListener('click', async () => {
             if (!currentRoomCode) return;
-            // Удаляем gameState и готовность, возвращаем в лобби
+            // Удаляем gameState
             await set(ref(db, `rooms/${currentRoomCode}/gameState`), null);
-            await update(ref(db), { [`rooms/${currentRoomCode}/ready`]: null });
             gameActive = false;
             gameScreenEl.classList.remove('active');
             lobbyScreenEl.classList.add('active');
-            // Показываем кнопки лобби
+            // Сбрасываем флаг в room.js
+            resetGameStarted();
+            // Показываем кнопки лобби (на случай, если у этого игрока они скрыты)
             const tankSelectBtn = document.getElementById('tankSelectBtn');
             const readyBtn = document.getElementById('readyBtn');
             if (tankSelectBtn) tankSelectBtn.style.display = 'inline-block';
@@ -261,11 +265,17 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
         setActivateAbilityCallback(() => activateTankAbility());
         mobileControlsActive = true;
     }
-    requestAnimationFrame(gameLoop);
+
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 export function stopGame() {
     gameActive = false;
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
     if (isMobile && mobileControlsActive) {
         removeMobileControls();
         mobileControlsActive = false;
@@ -384,7 +394,7 @@ function gameLoop(timestamp) {
     updateCamera();
     updateEnemyTurret();
     draw();
-    requestAnimationFrame(gameLoop);
+    animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 function updateGame(deltaTime) {
