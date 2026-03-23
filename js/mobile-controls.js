@@ -1,7 +1,8 @@
-let joystickActive = false;
 let joystickDir = { x: 0, y: 0 };
 let shootCallback = null;
 let abilityCallback = null;
+let joystickActive = false;
+let touchId = null;
 
 export function initMobileControls(canvas, onShoot) {
     shootCallback = onShoot;
@@ -11,14 +12,42 @@ export function initMobileControls(canvas, onShoot) {
     controlsContainer.style.position = 'fixed';
     controlsContainer.style.bottom = '20px';
     controlsContainer.style.left = '0';
-    controlsContainer.style.width = '100%';
+    controlsContainer.style.right = '0';
     controlsContainer.style.display = 'flex';
     controlsContainer.style.justifyContent = 'space-between';
+    controlsContainer.style.alignItems = 'flex-end';
     controlsContainer.style.padding = '0 20px';
     controlsContainer.style.boxSizing = 'border-box';
     controlsContainer.style.pointerEvents = 'none';
     controlsContainer.style.zIndex = '1000';
     
+    // Левая колонка: джойстик и кнопка способности
+    const leftColumn = document.createElement('div');
+    leftColumn.style.display = 'flex';
+    leftColumn.style.flexDirection = 'column';
+    leftColumn.style.alignItems = 'center';
+    leftColumn.style.gap = '10px';
+    leftColumn.style.pointerEvents = 'auto';
+    
+    // Кнопка способности (уменьшенная, выше)
+    const abilityBtn = document.createElement('div');
+    abilityBtn.id = 'ability-button';
+    abilityBtn.style.width = '70px';
+    abilityBtn.style.height = '70px';
+    abilityBtn.style.borderRadius = '50%';
+    abilityBtn.style.background = 'rgba(0,255,0,0.7)';
+    abilityBtn.style.border = '2px solid white';
+    abilityBtn.style.display = 'flex';
+    abilityBtn.style.alignItems = 'center';
+    abilityBtn.style.justifyContent = 'center';
+    abilityBtn.style.color = 'white';
+    abilityBtn.style.fontSize = '16px';
+    abilityBtn.style.fontWeight = 'bold';
+    abilityBtn.style.pointerEvents = 'auto';
+    abilityBtn.style.touchAction = 'manipulation';
+    abilityBtn.textContent = 'SKILL';
+    
+    // Джойстик
     const joystick = document.createElement('div');
     joystick.id = 'joystick';
     joystick.style.width = '120px';
@@ -43,12 +72,16 @@ export function initMobileControls(canvas, onShoot) {
     joystickKnob.style.touchAction = 'none';
     joystick.appendChild(joystickKnob);
     
+    leftColumn.appendChild(abilityBtn);
+    leftColumn.appendChild(joystick);
+    
+    // Правая колонка: кнопка огня
     const shootBtn = document.createElement('div');
     shootBtn.id = 'shoot-button';
     shootBtn.style.width = '100px';
     shootBtn.style.height = '100px';
     shootBtn.style.borderRadius = '50%';
-    shootBtn.style.background = 'rgba(255,0,0,0.6)';
+    shootBtn.style.background = 'rgba(255,0,0,0.7)';
     shootBtn.style.border = '2px solid white';
     shootBtn.style.display = 'flex';
     shootBtn.style.alignItems = 'center';
@@ -60,31 +93,11 @@ export function initMobileControls(canvas, onShoot) {
     shootBtn.style.touchAction = 'manipulation';
     shootBtn.textContent = 'FIRE';
     
-    const abilityBtn = document.createElement('div');
-    abilityBtn.id = 'ability-button';
-    abilityBtn.style.width = '100px';
-    abilityBtn.style.height = '100px';
-    abilityBtn.style.borderRadius = '50%';
-    abilityBtn.style.background = 'rgba(0,255,0,0.6)';
-    abilityBtn.style.border = '2px solid white';
-    abilityBtn.style.display = 'flex';
-    abilityBtn.style.alignItems = 'center';
-    abilityBtn.style.justifyContent = 'center';
-    abilityBtn.style.color = 'white';
-    abilityBtn.style.fontSize = '20px';
-    abilityBtn.style.fontWeight = 'bold';
-    abilityBtn.style.pointerEvents = 'auto';
-    abilityBtn.style.touchAction = 'manipulation';
-    abilityBtn.textContent = 'SKILL';
-    
-    controlsContainer.appendChild(joystick);
+    controlsContainer.appendChild(leftColumn);
     controlsContainer.appendChild(shootBtn);
-    controlsContainer.appendChild(abilityBtn);
     document.body.appendChild(controlsContainer);
     
-    let touchId = null;
-    let startX = 0, startY = 0;
-    
+    // Обработка джойстика
     const handleTouchStart = (e) => {
         e.preventDefault();
         const touch = e.touches[0];
@@ -93,8 +106,6 @@ export function initMobileControls(canvas, onShoot) {
         const centerY = rect.top + rect.height/2;
         touchId = touch.identifier;
         joystickActive = true;
-        startX = touch.clientX;
-        startY = touch.clientY;
         updateJoystick(touch.clientX, touch.clientY, centerX, centerY);
     };
     
