@@ -15,7 +15,7 @@ const registerForm = document.getElementById('register-form');
 const showLoginBtn = document.getElementById('show-login');
 const showRegisterBtn = document.getElementById('show-register');
 const userNickSpan = document.getElementById('user-nick');
-const logoutBtn = document.getElementById('logoutBtn'); // выход из аккаунта
+const logoutBtn = document.getElementById('logoutBtn');
 
 const createBtn = document.getElementById('createBtn');
 const joinBtn = document.getElementById('joinBtn');
@@ -33,7 +33,7 @@ if (currentPlayerNick) {
     userNickSpan.textContent = currentPlayerNick;
 }
 
-// Инициализируем комнату
+// Создаём обработчики комнаты
 const roomHandlers = initRoom({
     createBtn,
     joinBtn,
@@ -51,7 +51,7 @@ const roomHandlers = initRoom({
     }
 });
 
-// Инициализируем игру, передаём roomHandlers
+// Инициализация игры с передачей roomHandlers
 initGame({
     gameScreen,
     lobbyScreen,
@@ -59,7 +59,6 @@ initGame({
     gameoverMessage
 }, roomHandlers);
 
-// Инициализируем аутентификацию
 initAuth({
     authScreen,
     lobbyScreen,
@@ -85,6 +84,6 @@ roomHandlers.setPlayerNick(currentPlayerNick);
 
 window.addEventListener('beforeunload', () => {
     if (currentPlayerNick && roomHandlers.getRoomCode()) {
-        // Можно очистить комнату, если нужно
+        // опционально
     }
 });
