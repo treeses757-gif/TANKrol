@@ -1,14 +1,8 @@
 import { tanks, tankList } from './tanks.js';
 
 let onConfirmCallback = null;
-let selectionScreenElement = null;
 
 export function createSelectionScreen(onConfirm) {
-    // Удаляем предыдущий экран, если есть
-    if (selectionScreenElement) {
-        selectionScreenElement.remove();
-        selectionScreenElement = null;
-    }
     onConfirmCallback = onConfirm;
     
     const container = document.createElement('div');
@@ -18,24 +12,28 @@ export function createSelectionScreen(onConfirm) {
     container.style.left = '0';
     container.style.width = '100%';
     container.style.height = '100%';
-    container.style.background = 'rgba(0,0,0,0.9)';
+    container.style.background = 'rgba(0,0,0,0.95)';
     container.style.display = 'flex';
     container.style.flexDirection = 'column';
     container.style.alignItems = 'center';
     container.style.justifyContent = 'center';
-    container.style.zIndex = '1000';
+    container.style.zIndex = '2000';
+    container.style.overflowY = 'auto';
+    container.style.padding = '20px';
     
     const title = document.createElement('h2');
     title.textContent = 'Выберите свой танк';
     title.style.color = 'white';
-    title.style.marginBottom = '30px';
+    title.style.marginBottom = '20px';
+    title.style.fontSize = window.innerWidth < 600 ? '24px' : '32px';
     container.appendChild(title);
     
     const tanksContainer = document.createElement('div');
     tanksContainer.style.display = 'flex';
-    tanksContainer.style.gap = '20px';
+    tanksContainer.style.gap = '15px';
     tanksContainer.style.flexWrap = 'wrap';
     tanksContainer.style.justifyContent = 'center';
+    tanksContainer.style.maxWidth = '100%';
     
     let selectedTank = null;
     
@@ -43,20 +41,21 @@ export function createSelectionScreen(onConfirm) {
         const tank = tanks[tankId];
         const card = document.createElement('div');
         card.className = 'tank-card';
-        card.style.width = '200px';
-        card.style.padding = '20px';
+        card.style.width = window.innerWidth < 600 ? '160px' : '200px';
+        card.style.padding = '15px';
         card.style.background = tank.color;
         card.style.borderRadius = '15px';
         card.style.textAlign = 'center';
         card.style.cursor = 'pointer';
         card.style.transition = 'transform 0.2s';
         card.style.border = '2px solid white';
+        card.style.margin = '5px';
         
         card.innerHTML = `
-            <div style="font-size: 48px; margin-bottom: 10px;">${tank.icon}</div>
-            <div style="font-size: 24px; font-weight: bold; margin-bottom: 5px;">${tank.name}</div>
-            <div style="font-size: 14px; margin-bottom: 10px;">${tank.abilityName}</div>
-            <div style="font-size: 12px; opacity: 0.8;">${tank.description}</div>
+            <div style="font-size: ${window.innerWidth < 600 ? '36px' : '48px'}; margin-bottom: 8px;">${tank.icon}</div>
+            <div style="font-size: ${window.innerWidth < 600 ? '18px' : '24px'}; font-weight: bold; margin-bottom: 5px;">${tank.name}</div>
+            <div style="font-size: ${window.innerWidth < 600 ? '12px' : '14px'}; margin-bottom: 8px;">${tank.abilityName}</div>
+            <div style="font-size: ${window.innerWidth < 600 ? '10px' : '12px'}; opacity: 0.8;">${tank.description}</div>
         `;
         
         card.addEventListener('click', () => {
@@ -76,18 +75,19 @@ export function createSelectionScreen(onConfirm) {
     
     const confirmBtn = document.createElement('button');
     confirmBtn.textContent = 'Подтвердить выбор';
-    confirmBtn.style.marginTop = '30px';
-    confirmBtn.style.padding = '12px 30px';
-    confirmBtn.style.fontSize = '18px';
+    confirmBtn.style.marginTop = '20px';
+    confirmBtn.style.padding = window.innerWidth < 600 ? '12px 25px' : '12px 30px';
+    confirmBtn.style.fontSize = window.innerWidth < 600 ? '16px' : '18px';
     confirmBtn.style.background = '#4CAF50';
     confirmBtn.style.color = 'white';
     confirmBtn.style.border = 'none';
     confirmBtn.style.borderRadius = '10px';
     confirmBtn.style.cursor = 'pointer';
+    confirmBtn.style.width = window.innerWidth < 600 ? '80%' : 'auto';
+    confirmBtn.style.maxWidth = '200px';
     confirmBtn.addEventListener('click', () => {
         if (selectedTank) {
             container.remove();
-            selectionScreenElement = null;
             if (onConfirmCallback) onConfirmCallback(selectedTank);
         } else {
             alert('Пожалуйста, выберите танк');
@@ -96,14 +96,9 @@ export function createSelectionScreen(onConfirm) {
     container.appendChild(confirmBtn);
     
     document.body.appendChild(container);
-    selectionScreenElement = container;
 }
 
 export function showWaitingMessage() {
-    // Удаляем старое сообщение, если есть
-    const oldMsg = document.getElementById('waiting-message');
-    if (oldMsg) oldMsg.remove();
-    
     const container = document.createElement('div');
     container.id = 'waiting-message';
     container.style.position = 'fixed';
@@ -112,9 +107,9 @@ export function showWaitingMessage() {
     container.style.transform = 'translate(-50%, -50%)';
     container.style.background = 'rgba(0,0,0,0.8)';
     container.style.color = 'white';
-    container.style.padding = '20px';
+    container.style.padding = '15px 25px';
     container.style.borderRadius = '10px';
-    container.style.fontSize = '18px';
+    container.style.fontSize = '16px';
     container.style.zIndex = '1000';
     container.textContent = 'Ожидание выбора соперника...';
     document.body.appendChild(container);
