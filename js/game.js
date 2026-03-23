@@ -37,7 +37,7 @@ let enemyPhantomData = null;
 let boomerangBullets = [];
 
 let lastAbilityTime = 0;
-const ABILITY_COOLDOWN = 25; // секунд
+const ABILITY_COOLDOWN = 25;
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
@@ -54,7 +54,7 @@ let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, returnToRo
 let animationFrameId = null;
 let roomHandlersRef = null;
 
-// Функции отрисовки (без изменений)
+// Функции отрисовки
 function drawTank(x, y, tankId, direction, isPhantom = false) {
     const tank = tanks[tankId];
     if (!tank) return;
@@ -420,18 +420,27 @@ function updateGame(deltaTime) {
     if (!currentRoomCode || !currentPlayerNick || !canvas) return;
     const move = PLAYER_SPEED * deltaTime;
     let newX = myPos.x, newY = myPos.y;
-    if (keys['ArrowUp'] || keys['KeyW']) { newY -= move; lastMoveDir = { x: 0, y: -1 }; }
-    if (keys['ArrowDown'] || keys['KeyS']) { newY += move; lastMoveDir = { x: 0, y: 1 }; }
-    if (keys['ArrowLeft'] || keys['KeyA']) { newX -= move; lastMoveDir = { x: -1, y: 0 }; }
-    if (keys['ArrowRight'] || keys['KeyD']) { newX += move; lastMoveDir = { x: 1, y: 0 }; }
+    let moved = false;
+
+    if (keys['ArrowUp'] || keys['KeyW']) { newY -= move; lastMoveDir = { x: 0, y: -1 }; moved = true; }
+    if (keys['ArrowDown'] || keys['KeyS']) { newY += move; lastMoveDir = { x: 0, y: 1 }; moved = true; }
+    if (keys['ArrowLeft'] || keys['KeyA']) { newX -= move; lastMoveDir = { x: -1, y: 0 }; moved = true; }
+    if (keys['ArrowRight'] || keys['KeyD']) { newX += move; lastMoveDir = { x: 1, y: 0 }; moved = true; }
+
     if (isMobile && mobileControlsActive) {
         const jDir = getJoystickDirection();
         if (jDir.x !== 0 || jDir.y !== 0) {
             lastMoveDir = { x: jDir.x, y: jDir.y };
             newX += jDir.x * move;
             newY += jDir.y * move;
+            moved = true;
         }
     }
+
+    if (moved) {
+        //console.log('[game] движение: newX=' + newX + ', newY=' + newY);
+    }
+
     if (!mySpiderActive) {
         newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
         newY = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY));
