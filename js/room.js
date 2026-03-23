@@ -151,9 +151,8 @@ export function initRoom(components) {
                 const enemyTankId = tanksData[enemyNick];
                 console.log('[room] запуск: myTankId=' + myTankId + ', enemyTankId=' + enemyTankId);
                 if (myTankId && enemyTankId) {
-                    setTanks(currentPlayerNick, myTankId, enemyNick, enemyTankId);
                     loadMap(currentRoomCode);
-                    startGame(currentRoomCode, currentPlayerNick, myTankId, enemyTankId);
+                    startGame(currentRoomCode, currentPlayerNick, myTankId, enemyNick, enemyTankId);
                     listenGameState(currentRoomCode, currentPlayerNick);
                     if (tankSelectBtn) tankSelectBtn.style.display = 'none';
                     if (readyBtn) readyBtn.style.display = 'none';
