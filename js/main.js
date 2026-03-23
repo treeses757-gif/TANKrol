@@ -33,7 +33,6 @@ if (currentPlayerNick) {
     userNickSpan.textContent = currentPlayerNick;
 }
 
-// Создаём обработчики комнаты
 const roomHandlers = initRoom({
     createBtn,
     joinBtn,
@@ -51,7 +50,6 @@ const roomHandlers = initRoom({
     }
 });
 
-// Инициализация игры с передачей roomHandlers
 initGame({
     gameScreen,
     lobbyScreen,
@@ -84,6 +82,6 @@ roomHandlers.setPlayerNick(currentPlayerNick);
 
 window.addEventListener('beforeunload', () => {
     if (currentPlayerNick && roomHandlers.getRoomCode()) {
-        // опционально
+        // очистка при необходимости
     }
 });
