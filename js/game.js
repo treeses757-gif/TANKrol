@@ -4,7 +4,7 @@ import { isPositionFree, circleRectCollide } from './utils.js';
 import { initMobileControls, getJoystickDirection, removeMobileControls, setActivateAbilityCallback } from './mobile-controls.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_HALF, BULLET_RADIUS } from './config.js';
 import { tanks } from './tanks.js';
-import { resetGameStarted } from './room.js'; // импорт для сброса флага
+import { resetGameStarted } from './room.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
@@ -38,7 +38,7 @@ let enemyPhantomData = null;
 let boomerangBullets = [];
 
 let lastAbilityTime = 0;
-const ABILITY_COOLDOWN = 25; // изменено с 8 на 25
+const ABILITY_COOLDOWN = 25;
 
 let cameraX = 0, cameraY = 0;
 let useCamera = false;
@@ -63,14 +63,12 @@ function drawTank(x, y, tankId, direction, isPhantom = false) {
     const scaleX = getScaleX();
     const scaleY = getScaleY();
     if (isPhantom) ctx.globalAlpha = 0.5;
-    // корпус
     const bodyW = tank.body.width * scaleX;
     const bodyH = tank.body.height * scaleY;
     const bodyX = sx - bodyW/2;
     const bodyY = sy - bodyH/2 + tank.body.offsetY * scaleY;
     ctx.fillStyle = tank.color;
     ctx.fillRect(bodyX, bodyY, bodyW, bodyH);
-    // гусеницы
     ctx.fillStyle = '#333';
     const trackW = tank.tracks.width * scaleX;
     const trackH = tank.tracks.height * scaleY;
@@ -78,7 +76,6 @@ function drawTank(x, y, tankId, direction, isPhantom = false) {
     const trackY = sy - trackH/2 + tank.tracks.offsetY * scaleY;
     ctx.fillRect(trackX, trackY, trackW, trackH);
     ctx.fillRect(trackX, trackY - trackH*2, trackW, trackH);
-    // башня
     const turretR = tank.turret.radius * scaleX;
     ctx.fillStyle = tank.color;
     ctx.beginPath();
@@ -87,7 +84,6 @@ function drawTank(x, y, tankId, direction, isPhantom = false) {
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 2 * scaleX;
     ctx.stroke();
-    // пушка
     const gunLen = tank.gun.length * scaleX;
     const gunW = tank.gun.width * scaleX;
     ctx.beginPath();
@@ -142,14 +138,11 @@ export function initGame(components) {
     if (returnToRoomBtn) {
         returnToRoomBtn.addEventListener('click', async () => {
             if (!currentRoomCode) return;
-            // Удаляем gameState
             await set(ref(db, `rooms/${currentRoomCode}/gameState`), null);
             gameActive = false;
             gameScreenEl.classList.remove('active');
             lobbyScreenEl.classList.add('active');
-            // Сбрасываем флаг в room.js
             resetGameStarted();
-            // Показываем кнопки лобби (на случай, если у этого игрока они скрыты)
             const tankSelectBtn = document.getElementById('tankSelectBtn');
             const readyBtn = document.getElementById('readyBtn');
             if (tankSelectBtn) tankSelectBtn.style.display = 'inline-block';
@@ -214,7 +207,7 @@ async function activateTankAbility() {
                 owner: currentPlayerNick,
                 key: bulletKey,
                 type: 'boomerang',
-                creationTime: Date.now()
+                returning: false      // флаг: false – летит от игрока, true – возвращается
             };
             update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: boomerang });
             break;
@@ -240,6 +233,16 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
         alert('Пожалуйста, поверните устройство горизонтально');
         return;
     }
+
+    // Загружаем начальные позиции из Firebase
+    const gameStateSnap = await get(ref(db, `rooms/${roomCode}/gameState`));
+    const gameState = gameStateSnap.val();
+    if (gameState) {
+        if (gameState[playerNick]) myPos = gameState[playerNick];
+        const enemyNickLocal = Object.keys(gameState).find(n => n !== playerNick);
+        if (enemyNickLocal) enemyPos = gameState[enemyNickLocal];
+    }
+
     lobbyScreenEl.classList.remove('active');
     gameScreenEl.classList.add('active');
     gameOverScreenEl.classList.remove('active');
@@ -315,7 +318,7 @@ export function listenGameState(code, playerNick) {
                 if (bullet.owner === playerNick) {
                     if (!myBullets.some(b => b.key === key)) {
                         if (bullet.type === 'boomerang') {
-                            boomerangBullets.push({ ...bullet, returnTimer: (Date.now() - bullet.creationTime) / 1000 });
+                            boomerangBullets.push({ ...bullet });
                         } else {
                             myBullets.push({ ...bullet });
                         }
@@ -323,7 +326,7 @@ export function listenGameState(code, playerNick) {
                 } else {
                     if (!enemyBullets.some(b => b.key === key)) {
                         if (bullet.type === 'boomerang') {
-                            boomerangBullets.push({ ...bullet, returnTimer: (Date.now() - bullet.creationTime) / 1000 });
+                            boomerangBullets.push({ ...bullet });
                         } else {
                             enemyBullets.push({ ...bullet });
                         }
@@ -524,11 +527,24 @@ function updatePhantom(deltaTime) {
 function updateBoomerangs(deltaTime) {
     for (let i = 0; i < boomerangBullets.length; i++) {
         const b = boomerangBullets[i];
-        b.returnTimer += deltaTime;
-        if (b.returnTimer < 1.0) {
-            b.x += b.vx * deltaTime;
-            b.y += b.vy * deltaTime;
-        } else {
+        // Движение
+        b.x += b.vx * deltaTime;
+        b.y += b.vy * deltaTime;
+
+        // Проверка столкновения с препятствиями или выходом за границы
+        let hitObstacle = false;
+        for (let obs of obstacles) {
+            if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
+                hitObstacle = true;
+                break;
+            }
+        }
+        const outOfBounds = (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT);
+
+        if (!b.returning && (hitObstacle || outOfBounds)) {
+            // Начинаем возврат к владельцу
+            b.returning = true;
+            // Направляем к владельцу
             const ownerPos = (b.owner === currentPlayerNick) ? myPos : enemyPos;
             const dx = ownerPos.x - b.x, dy = ownerPos.y - b.y;
             const len = Math.hypot(dx, dy);
@@ -536,9 +552,14 @@ function updateBoomerangs(deltaTime) {
                 b.vx = (dx / len) * BULLET_SPEED;
                 b.vy = (dy / len) * BULLET_SPEED;
             }
-            b.x += b.vx * deltaTime;
-            b.y += b.vy * deltaTime;
+            // Обновляем в Firebase
+            if (currentRoomCode && b.key) {
+                update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${b.key}`]: b });
+            }
+            continue;
         }
+
+        // Проверка попадания во врага (только если бумеранг принадлежит текущему игроку и не возвращается? На самом деле может попасть и при возврате)
         let targetPos, targetReflectActive;
         if (b.owner === currentPlayerNick) {
             targetPos = enemyPos;
@@ -550,18 +571,24 @@ function updateBoomerangs(deltaTime) {
         const dx = b.x - targetPos.x, dy = b.y - targetPos.y;
         if (dx*dx + dy*dy < (TANK_HALF + BULLET_RADIUS)**2) {
             if (targetReflectActive) {
-                b.vx = -b.vx; b.vy = -b.vy;
+                // Отражение – меняем направление и владельца
+                b.vx = -b.vx;
+                b.vy = -b.vy;
                 b.owner = (b.owner === currentPlayerNick) ? enemyNick : currentPlayerNick;
+                // Если отражается, сбрасываем returning? Можно оставить как есть
                 if (currentRoomCode && b.key) {
                     update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${b.key}`]: b });
                 }
                 continue;
             }
+            // Попадание
             update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: b.owner });
             gameActive = false;
             boomerangBullets.splice(i,1);
             return;
         }
+
+        // Удаляем, если слишком далеко (на всякий случай)
         if (b.x < -500 || b.x > VIRTUAL_WIDTH + 500 || b.y < -500 || b.y > VIRTUAL_HEIGHT + 500) {
             boomerangBullets.splice(i,1);
             i--;
