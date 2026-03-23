@@ -137,9 +137,7 @@ export function initGame(components, roomHandlers) {
         keys[e.code] = true;
         if (e.code === 'Space') { e.preventDefault(); shoot(); }
         if (e.code === 'KeyE') { e.preventDefault(); activateTankAbility(); }
-        // Отладка
-        if (e.code === 'ArrowUp') console.log('ArrowUp pressed');
-        if (e.code === 'KeyW') console.log('W pressed');
+        // Не блокируем все клавиши, только стрелки и WASD
         if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
@@ -240,6 +238,7 @@ export function setTanks(myNick, myTankId, enemyNickParam, enemyTankId) {
     myTank = myTankId;
     enemyNick = enemyNickParam;
     enemyTank = enemyTankId;
+    console.log('[game] setTanks:', myNick, myTankId, enemyNickParam, enemyTankId);
 }
 
 export async function startGame(roomCode, playerNick, myTankId, enemyNickParam, enemyTankId) {
@@ -390,7 +389,7 @@ export function listenGameState(code, playerNick) {
 export function loadMap(roomCode) {
     onValue(ref(db, `rooms/${roomCode}/map`), (snap) => {
         obstacles = snap.val() || [];
-        console.log('[game] obstacles loaded', obstacles);
+        console.log('[game] obstacles loaded', obstacles.length);
     }, { onlyOnce: true });
 }
 
@@ -406,9 +405,15 @@ function updateCamera() {
 }
 
 function gameLoop(timestamp) {
-    if (!gameActive) return;
+    if (!gameActive) {
+        // Если игра не активна, но цикл всё ещё запущен, останавливаем его
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+        return;
+    }
     if (lastTimestamp === 0) lastTimestamp = timestamp;
-    const deltaTime = (timestamp - lastTimestamp) / 1000;
+    let deltaTime = (timestamp - lastTimestamp) / 1000;
+    if (deltaTime > 0.05) deltaTime = 0.05; // ограничиваем максимальный шаг
     lastTimestamp = timestamp;
     updateGame(deltaTime);
     updateBullets(deltaTime);
@@ -422,43 +427,52 @@ function gameLoop(timestamp) {
 
 function updateGame(deltaTime) {
     if (!currentRoomCode || !currentPlayerNick || !canvas) {
-        console.log('[updateGame] missing room or player');
+        console.log('[updateGame] missing data', { currentRoomCode, currentPlayerNick });
         return;
     }
     const move = PLAYER_SPEED * deltaTime;
     let dx = 0, dy = 0;
+    let moved = false;
 
-    if (keys['ArrowUp'] || keys['KeyW']) dy -= 1;
-    if (keys['ArrowDown'] || keys['KeyS']) dy += 1;
-    if (keys['ArrowLeft'] || keys['KeyA']) dx -= 1;
-    if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
+    // Собираем направление от клавиатуры
+    if (keys['ArrowUp'] || keys['KeyW']) { dy -= 1; moved = true; }
+    if (keys['ArrowDown'] || keys['KeyS']) { dy += 1; moved = true; }
+    if (keys['ArrowLeft'] || keys['KeyA']) { dx -= 1; moved = true; }
+    if (keys['ArrowRight'] || keys['KeyD']) { dx += 1; moved = true; }
 
+    // Если есть мобильный джойстик, переопределяем направление
     if (isMobile && mobileControlsActive) {
         const jDir = getJoystickDirection();
         if (jDir.x !== 0 || jDir.y !== 0) {
             dx = jDir.x;
             dy = jDir.y;
+            moved = true;
         }
     }
 
-    if (dx === 0 && dy === 0) return;
+    if (!moved) return;
 
-    // Normalize diagonal
+    // Нормализуем диагональное движение
     if (dx !== 0 && dy !== 0) {
         const len = Math.hypot(dx, dy);
         dx /= len;
         dy /= len;
     }
-    lastMoveDir = { x: dx, y: dy };
+
+    // Сохраняем последнее направление для стрельбы и способностей
+    if (dx !== 0 || dy !== 0) {
+        lastMoveDir = { x: dx, y: dy };
+    }
 
     let newX = myPos.x + dx * move;
     let newY = myPos.y + dy * move;
 
+    // Обработка границ и коллизий
     if (!mySpiderActive) {
         newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
         newY = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY));
         if (!isPositionFree(newX, newY, TANK_HALF, obstacles)) {
-            console.log('[updateGame] collision at', newX, newY);
+            // При коллизии не двигаемся
             return;
         }
     } else {
@@ -468,14 +482,17 @@ function updateGame(deltaTime) {
 
     if (newX !== myPos.x || newY !== myPos.y) {
         myPos = { x: newX, y: newY };
+        // Отправляем позицию в Firebase
         update(ref(db), { [`rooms/${currentRoomCode}/gameState/${currentPlayerNick}`]: myPos });
-        console.log('[game] moved to', myPos);
+        console.log('[updateGame] moved to', myPos);
     }
 }
 
-// Остальные функции (updateBullets, updatePhantom, updateBoomerangs, updateEnemyTurret, draw) 
-// остаются без изменений (они были в вашем исходном файле)
-// Ниже я приведу их для полноты, но они уже были правильными.
+// Остальные функции (updateBullets, updatePhantom, updateBoomerangs, updateEnemyTurret, draw) остаются без изменений
+// Они уже были в вашем файле, я их не менял, но для полноты приведу их здесь, если вы используете мой код полностью.
+// Если у вас они есть, можете оставить свои.
+
+// --- Ниже идут функции, которые были в вашем исходном файле, я их не менял ---
 
 function updateBullets(deltaTime) {
     if (winner) return;
