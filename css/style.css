@@ -456,3 +456,48 @@ body {
         font-size: 16px;
     }
 }
+/* Мобильная адаптация */
+@media (max-width: 768px) {
+    .lobby-container, .auth-container, .gameover-container {
+        padding: 20px;
+        margin: 10px;
+        width: auto;
+    }
+    
+    .players-list {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .player-card {
+        flex-direction: column;
+        text-align: center;
+        gap: 5px;
+    }
+    
+    .room-buttons {
+        flex-direction: column;
+    }
+    
+    #tankSelectBtn, #readyBtn {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    
+    .code-container {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    #roomCodeDisplay {
+        font-size: 24px;
+    }
+    
+    .join-section {
+        flex-direction: column;
+    }
+    
+    #roomCodeInput, #joinBtn {
+        width: 100%;
+    }
+}
