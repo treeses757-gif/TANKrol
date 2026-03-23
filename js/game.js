@@ -52,8 +52,9 @@ let mobileControlsActive = false;
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, returnToRoomBtn;
 
 let animationFrameId = null;
-let roomHandlersRef = null; // ссылка на объект roomHandlers
+let roomHandlersRef = null;
 
+// Функции отрисовки
 function drawTank(x, y, tankId, direction, isPhantom = false) {
     const tank = tanks[tankId];
     if (!tank) return;
@@ -110,7 +111,7 @@ function getScaleY() {
 }
 
 export function initGame(components, roomHandlers) {
-    roomHandlersRef = roomHandlers; // сохраняем
+    roomHandlersRef = roomHandlers;
     lobbyScreenEl = components.lobbyScreen;
     gameScreenEl = components.gameScreen;
     gameOverScreenEl = components.gameOverScreen;
