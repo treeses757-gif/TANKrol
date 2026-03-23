@@ -11,7 +11,6 @@ let currentRoomCode = null;
 let roomListener = null;
 let playerTank = null;
 let playerReady = false;
-let selectionShown = false;
 
 let tankSelectBtn, readyBtn, leaveRoomBtn, roomPlayersList;
 let createBtn, joinBtn, roomCodeInput, roomCodeDisplay, roomCodeSpan, copyBtn, statusDiv;
@@ -136,13 +135,11 @@ export function initRoom(components) {
             statusDiv.textContent = `Игроков: ${players.length}/2`;
             updateRoomUI(players, data.tanks || {}, data.ready || {});
 
-            // Если gameState удалён – возвращаем кнопки лобби
             if (!data.gameState) {
                 if (tankSelectBtn) tankSelectBtn.style.display = 'inline-block';
                 if (readyBtn) readyBtn.style.display = 'inline-block';
             }
 
-            // Если gameState появился и игра ещё не активна локально – запускаем
             if (data.gameState && !gameActive) {
                 console.log('[room] gameState обнаружен, запускаем игру');
                 const tanksData = data.tanks || {};
@@ -162,7 +159,6 @@ export function initRoom(components) {
                 return;
             }
 
-            // Если gameState ещё нет, пробуем создать (если условия выполнены)
             if (!data.gameState) {
                 await tryStartGame(data);
             }
@@ -177,7 +173,6 @@ export function initRoom(components) {
         currentRoomCode = null;
         playerTank = null;
         playerReady = false;
-        selectionShown = false;
         if (roomListener) roomListener();
         if (components.onRoomLeft) components.onRoomLeft();
         if (tankSelectBtn) tankSelectBtn.style.display = 'none';
@@ -190,7 +185,6 @@ export function initRoom(components) {
     }
 
     function resetGameStarted() {
-        // Флаг больше не используется, но оставляем для совместимости с game.js
         console.log('[room] resetGameStarted вызван (ничего не делает)');
     }
 
