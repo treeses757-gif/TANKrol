@@ -241,7 +241,7 @@ export function setTanks(myNick, myTankId, enemyNickParam, enemyTankId) {
     enemyTank = enemyTankId;
 }
 
-export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
+export async function startGame(roomCode, playerNick, myTankId, enemyNickParam, enemyTankId) {
     if (!gameScreenEl || !lobbyScreenEl) return;
     if (isMobile && window.innerWidth < window.innerHeight) {
         alert('Пожалуйста, поверните устройство горизонтально');
@@ -275,6 +275,8 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
     enemyPhantomActive = false;
     enemyPhantomData = null;
     lastAbilityTime = 0;
+
+    setTanks(playerNick, myTankId, enemyNickParam, enemyTankId);
 
     if (isMobile && !document.getElementById('mobile-controls')) {
         initMobileControls(canvas, shoot);
