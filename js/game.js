@@ -4,7 +4,6 @@ import { isPositionFree, circleRectCollide } from './utils.js';
 import { initMobileControls, getJoystickDirection, removeMobileControls, setActivateAbilityCallback } from './mobile-controls.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, PLAYER_SPEED, BULLET_SPEED, TANK_HALF, BULLET_RADIUS } from './config.js';
 import { tanks } from './tanks.js';
-import { resetGameStarted } from './room.js';
 
 export let gameActive = false;
 let myPos = { x: 200, y: 200 };
@@ -53,8 +52,8 @@ let mobileControlsActive = false;
 let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, returnToRoomBtn;
 
 let animationFrameId = null;
+let roomHandlersRef = null; // ссылка на объект roomHandlers
 
-// Функции отрисовки (без изменений)
 function drawTank(x, y, tankId, direction, isPhantom = false) {
     const tank = tanks[tankId];
     if (!tank) return;
@@ -110,7 +109,8 @@ function getScaleY() {
     return useCamera ? canvas.height / VIEWPORT_HEIGHT : canvas.height / VIRTUAL_HEIGHT;
 }
 
-export function initGame(components) {
+export function initGame(components, roomHandlers) {
+    roomHandlersRef = roomHandlers; // сохраняем
     lobbyScreenEl = components.lobbyScreen;
     gameScreenEl = components.gameScreen;
     gameOverScreenEl = components.gameOverScreen;
@@ -142,7 +142,9 @@ export function initGame(components) {
             gameActive = false;
             gameScreenEl.classList.remove('active');
             lobbyScreenEl.classList.add('active');
-            resetGameStarted();
+            if (roomHandlersRef && roomHandlersRef.resetGameStarted) {
+                roomHandlersRef.resetGameStarted();
+            }
             const tankSelectBtn = document.getElementById('tankSelectBtn');
             const readyBtn = document.getElementById('readyBtn');
             if (tankSelectBtn) tankSelectBtn.style.display = 'inline-block';
@@ -207,7 +209,7 @@ async function activateTankAbility() {
                 owner: currentPlayerNick,
                 key: bulletKey,
                 type: 'boomerang',
-                returning: false      // флаг: false – летит от игрока, true – возвращается
+                returning: false
             };
             update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: boomerang });
             break;
@@ -527,11 +529,9 @@ function updatePhantom(deltaTime) {
 function updateBoomerangs(deltaTime) {
     for (let i = 0; i < boomerangBullets.length; i++) {
         const b = boomerangBullets[i];
-        // Движение
         b.x += b.vx * deltaTime;
         b.y += b.vy * deltaTime;
 
-        // Проверка столкновения с препятствиями или выходом за границы
         let hitObstacle = false;
         for (let obs of obstacles) {
             if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
@@ -542,9 +542,7 @@ function updateBoomerangs(deltaTime) {
         const outOfBounds = (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT);
 
         if (!b.returning && (hitObstacle || outOfBounds)) {
-            // Начинаем возврат к владельцу
             b.returning = true;
-            // Направляем к владельцу
             const ownerPos = (b.owner === currentPlayerNick) ? myPos : enemyPos;
             const dx = ownerPos.x - b.x, dy = ownerPos.y - b.y;
             const len = Math.hypot(dx, dy);
@@ -552,14 +550,12 @@ function updateBoomerangs(deltaTime) {
                 b.vx = (dx / len) * BULLET_SPEED;
                 b.vy = (dy / len) * BULLET_SPEED;
             }
-            // Обновляем в Firebase
             if (currentRoomCode && b.key) {
                 update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${b.key}`]: b });
             }
             continue;
         }
 
-        // Проверка попадания во врага (только если бумеранг принадлежит текущему игроку и не возвращается? На самом деле может попасть и при возврате)
         let targetPos, targetReflectActive;
         if (b.owner === currentPlayerNick) {
             targetPos = enemyPos;
@@ -571,24 +567,20 @@ function updateBoomerangs(deltaTime) {
         const dx = b.x - targetPos.x, dy = b.y - targetPos.y;
         if (dx*dx + dy*dy < (TANK_HALF + BULLET_RADIUS)**2) {
             if (targetReflectActive) {
-                // Отражение – меняем направление и владельца
                 b.vx = -b.vx;
                 b.vy = -b.vy;
                 b.owner = (b.owner === currentPlayerNick) ? enemyNick : currentPlayerNick;
-                // Если отражается, сбрасываем returning? Можно оставить как есть
                 if (currentRoomCode && b.key) {
                     update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${b.key}`]: b });
                 }
                 continue;
             }
-            // Попадание
             update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: b.owner });
             gameActive = false;
             boomerangBullets.splice(i,1);
             return;
         }
 
-        // Удаляем, если слишком далеко (на всякий случай)
         if (b.x < -500 || b.x > VIRTUAL_WIDTH + 500 || b.y < -500 || b.y > VIRTUAL_HEIGHT + 500) {
             boomerangBullets.splice(i,1);
             i--;
