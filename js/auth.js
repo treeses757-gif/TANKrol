@@ -5,6 +5,7 @@ export function initAuth(components) {
     const {
         authScreen,
         lobbyScreen,
+        gameScreen,
         loginForm,
         registerForm,
         showLoginBtn,
@@ -110,7 +111,7 @@ export function initAuth(components) {
         localStorage.removeItem('playerNick');
         authScreen.classList.add('active');
         lobbyScreen.classList.remove('active');
-        gameScreen.classList.remove('active');
+        if (gameScreen) gameScreen.classList.remove('active');
         document.getElementById('roomCodeDisplay').textContent = '——';
         document.getElementById('copyBtn').style.display = 'none';
         if (onLogout) onLogout();
