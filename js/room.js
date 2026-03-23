@@ -12,7 +12,7 @@ let roomListener = null;
 let playerTank = null;
 let playerReady = false;
 let selectionShown = false;
-let gameStarted = false;
+let gameStarted = false; // локальный флаг, чтобы не запускать игру повторно
 
 let tankSelectBtn, readyBtn, leaveRoomBtn, roomPlayersList;
 let createBtn, joinBtn, roomCodeInput, roomCodeDisplay, roomCodeSpan, copyBtn, statusDiv;
@@ -35,6 +35,7 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
+    // Обновление списка игроков
     function updateRoomUI(players, tanksData, readyStatus) {
         if (!roomPlayersList) return;
         roomPlayersList.innerHTML = '';
@@ -103,13 +104,14 @@ export function initRoom(components) {
         });
     }
 
+    // Создание gameState, когда оба готовы и выбрали танки
     async function tryStartGame(roomData) {
-        if (gameStarted) return;
+        if (gameStarted) return; // если игра уже запускается или запущена – не создаём повторно
         const players = Object.keys(roomData.players || {});
         const tanksData = roomData.tanks || {};
         const readyStatus = roomData.ready || {};
         if (players.length === 2 && players.every(p => tanksData[p]) && players.every(p => readyStatus[p] === true) && !roomData.gameState) {
-            gameStarted = true;
+            console.log('Оба готовы и выбрали танки, создаём gameState');
             const pos1 = { x: 100, y: 100 };
             const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
             const gameState = {
@@ -120,6 +122,7 @@ export function initRoom(components) {
             };
             await set(ref(db, `rooms/${currentRoomCode}/gameState`), gameState);
             await set(ref(db, `rooms/${currentRoomCode}/ready`), null);
+            // НЕ устанавливаем gameStarted = true здесь, чтобы оба игрока смогли запустить игру через onValue
         }
     }
 
@@ -136,14 +139,20 @@ export function initRoom(components) {
             statusDiv.textContent = `Игроков: ${players.length}/2`;
             updateRoomUI(players, data.tanks || {}, data.ready || {});
 
+            // Если gameState удалён (например, после возврата в комнату) – сбрасываем флаг и показываем кнопки
             if (!data.gameState) {
-                if (gameStarted) gameStarted = false;
+                if (gameStarted) {
+                    console.log('gameState удалён, сбрасываем gameStarted');
+                    gameStarted = false;
+                }
                 if (tankSelectBtn) tankSelectBtn.style.display = 'inline-block';
                 if (readyBtn) readyBtn.style.display = 'inline-block';
             }
 
+            // Если gameState появился и игра ещё не запущена локально – запускаем
             if (data.gameState && !gameActive && !gameStarted) {
-                gameStarted = true;
+                console.log('gameState обнаружен, запускаем игру');
+                gameStarted = true; // помечаем, чтобы не запустить повторно
                 const tanksData = data.tanks || {};
                 const myTankId = tanksData[currentPlayerNick];
                 const enemyNick = players.find(n => n !== currentPlayerNick);
@@ -159,6 +168,7 @@ export function initRoom(components) {
                 return;
             }
 
+            // Если gameState ещё нет, пробуем создать (если условия выполнены)
             if (!data.gameState) {
                 await tryStartGame(data);
             }
@@ -186,6 +196,7 @@ export function initRoom(components) {
     }
 
     function resetGameStarted() {
+        console.log('resetGameStarted вызван');
         gameStarted = false;
     }
 
@@ -274,6 +285,6 @@ export function initRoom(components) {
         setPlayerNick,
         leaveRoom,
         getRoomCode,
-        resetGameStarted   // теперь доступен через объект
+        resetGameStarted
     };
 }
