@@ -1,14 +1,15 @@
 import { db } from './firebase.js';
 import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-import { startGame, listenGameState, loadMap, setTanks } from './game.js';
+import { startGame, listenGameState, gameActive, loadMap, setTanks } from './game.js';
 import { getRandomMap } from './maps.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
-import { tankList } from './tanks.js';
+import { createSelectionScreen, showWaitingMessage, hideWaitingMessage } from './selection.js';
 
 let currentPlayerNick = null;
 let currentRoomCode = null;
 let roomListener = null;
 let playerTank = null;
+let selectionShown = false;
 
 export function initRoom(components) {
     const {
@@ -27,23 +28,35 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Назначаем случайный танк для игрока
-    function assignRandomTank() {
-        const randomIndex = Math.floor(Math.random() * tankList.length);
-        return tankList[randomIndex];
+    async function showTankSelectionAndWait() {
+        if (selectionShown) return;
+        selectionShown = true;
+        console.log('Показываем экран выбора танка');
+        createSelectionScreen(async (tankId) => {
+            console.log('Выбран танк:', tankId);
+            playerTank = tankId;
+            await update(ref(db), {
+                [`rooms/${currentRoomCode}/tanks/${currentPlayerNick}`]: tankId
+            });
+            await checkAndStartGame();
+        });
     }
 
     async function checkAndStartGame() {
+        console.log('checkAndStartGame вызван');
         const roomRef = ref(db, `rooms/${currentRoomCode}`);
         const snap = await get(roomRef);
         const data = snap.val();
         if (!data) return;
-
         const players = Object.keys(data.players || {});
         const tanks = data.tanks || {};
 
-        // Если оба игрока есть и у обоих есть танки
+        console.log('Игроки:', players);
+        console.log('Выбранные танки:', tanks);
+
         if (players.length === 2 && tanks[players[0]] && tanks[players[1]]) {
+            console.log('Оба выбрали танки, начинаем игру');
+            hideWaitingMessage();
             const enemyNick = players.find(n => n !== currentPlayerNick);
             const enemyTank = tanks[enemyNick];
             setTanks(currentPlayerNick, playerTank, enemyNick, enemyTank);
@@ -51,6 +64,9 @@ export function initRoom(components) {
             startGame(currentRoomCode, currentPlayerNick, playerTank, enemyTank);
             listenGameState(currentRoomCode, currentPlayerNick);
             if (onRoomJoined) onRoomJoined(currentRoomCode);
+        } else if (playerTank) {
+            console.log('Ждём выбора соперника');
+            showWaitingMessage();
         }
     }
 
@@ -75,6 +91,7 @@ export function initRoom(components) {
             roomCodeSpan.textContent = code;
             copyBtn.style.display = 'inline-block';
             listenRoom(code);
+            console.log('Комната создана, код:', code);
         } catch (err) {
             console.error(err);
             alert('Ошибка создания комнаты');
@@ -88,6 +105,7 @@ export function initRoom(components) {
             alert('Введите код из цифр');
             return;
         }
+        console.log('Попытка присоединиться к комнате:', code);
         try {
             const roomRef = ref(db, `rooms/${code}`);
             const snap = await get(roomRef);
@@ -101,6 +119,7 @@ export function initRoom(components) {
             roomCodeSpan.textContent = code;
             copyBtn.style.display = 'inline-block';
             listenRoom(code);
+            console.log('Присоединились, код:', code);
         } catch (err) {
             console.error(err);
             alert('Ошибка присоединения');
@@ -124,51 +143,39 @@ export function initRoom(components) {
             const data = snap.val();
             if (!data) { leaveRoom(); return; }
 
-            const players = Object.keys(data.players || {});
-            const count = players.length;
+            const players = data.players || {};
+            const count = Object.keys(players).length;
             statusDiv.textContent = `Игроков: ${count}/2`;
+            console.log(`Игроков в комнате: ${count}`);
 
-            // Если оба игрока подключились и игра ещё не началась
+            // Если оба игрока подключились
             if (count === 2 && data.gameState === null) {
                 // Создаём начальные позиции, если ещё не созданы
                 if (!data.gameState) {
+                    const playerIds = Object.keys(players);
                     const pos1 = { x: 100, y: 100 };
                     const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
                     const gameState = {
-                        [players[0]]: pos1,
-                        [players[1]]: pos2
+                        [playerIds[0]]: pos1,
+                        [playerIds[1]]: pos2
                     };
                     await set(ref(db, `rooms/${code}/gameState`), gameState);
+                    console.log('Созданы начальные позиции');
                 }
 
-                // Назначаем танки тем игрокам, у кого их ещё нет
-                const tanks = data.tanks || {};
-                let needUpdate = false;
-                for (let nick of players) {
-                    if (!tanks[nick]) {
-                        const newTank = assignRandomTank();
-                        await update(ref(db), {
-                            [`rooms/${code}/tanks/${nick}`]: newTank
-                        });
-                        needUpdate = true;
-                        if (nick === currentPlayerNick) playerTank = newTank;
-                    } else if (nick === currentPlayerNick) {
-                        playerTank = tanks[nick];
-                    }
+                // Показываем выбор танка, если мы ещё не выбрали
+                if (currentPlayerNick && !playerTank && !selectionShown) {
+                    console.log('Оба игрока на месте, показываем выбор танка');
+                    showTankSelectionAndWait();
                 }
-                if (needUpdate) {
-                    // После обновления танков перепроверяем запуск игры
-                    checkAndStartGame();
-                } else {
-                    // Если танки уже есть, сразу запускаем
-                    checkAndStartGame();
-                }
-            } else if (count === 2 && data.gameState !== null && !gameActive) {
-                // Игра уже начата, но локально ещё не активна – запускаем
-                const tanks = data.tanks || {};
-                if (tanks[currentPlayerNick]) {
-                    playerTank = tanks[currentPlayerNick];
-                    checkAndStartGame();
+            }
+
+            // Проверяем, выбрали ли оба танки и не начата ли игра
+            const tanks = data.tanks || {};
+            if (count === 2 && tanks[players[0]] && tanks[players[1]] && data.gameState && !gameActive) {
+                if (currentPlayerNick && playerTank) {
+                    console.log('Оба выбрали танки, запускаем игру');
+                    await checkAndStartGame();
                 }
             }
         });
@@ -180,6 +187,7 @@ export function initRoom(components) {
         }
         currentRoomCode = null;
         playerTank = null;
+        selectionShown = false;
         if (roomListener) roomListener();
         if (onRoomLeft) onRoomLeft();
     }
