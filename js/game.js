@@ -54,7 +54,6 @@ let lobbyScreenEl, gameScreenEl, gameOverScreenEl, gameoverMessageEl, returnToRo
 let animationFrameId = null;
 let roomHandlersRef = null;
 
-// Функции отрисовки (без изменений)
 function drawTank(x, y, tankId, direction, isPhantom = false) {
     const tank = tanks[tankId];
     if (!tank) return;
@@ -121,6 +120,11 @@ export function initGame(components, roomHandlers) {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
     useCamera = !isMobile;
+
+    // Для мобильных: отключаем обработку касаний на canvas, чтобы они не мешали джойстику
+    if (isMobile) {
+        canvas.style.pointerEvents = 'none';
+    }
 
     // Предотвращаем прокрутку страницы на мобильных устройствах
     canvas.addEventListener('touchstart', (e) => {
@@ -244,7 +248,6 @@ export async function startGame(roomCode, playerNick, tankId, enemyTankId) {
         return;
     }
 
-    // Загружаем начальные позиции из Firebase
     const gameStateSnap = await get(ref(db, `rooms/${roomCode}/gameState`));
     const gameState = gameStateSnap.val();
     if (gameState) {
@@ -416,13 +419,11 @@ function updateGame(deltaTime) {
     let newX = myPos.x, newY = myPos.y;
     let moved = false;
 
-    // Обработка клавиатуры
     if (keys['ArrowUp'] || keys['KeyW']) { newY -= move; lastMoveDir = { x: 0, y: -1 }; moved = true; }
     if (keys['ArrowDown'] || keys['KeyS']) { newY += move; lastMoveDir = { x: 0, y: 1 }; moved = true; }
     if (keys['ArrowLeft'] || keys['KeyA']) { newX -= move; lastMoveDir = { x: -1, y: 0 }; moved = true; }
     if (keys['ArrowRight'] || keys['KeyD']) { newX += move; lastMoveDir = { x: 1, y: 0 }; moved = true; }
 
-    // Обработка мобильного джойстика
     if (isMobile && mobileControlsActive) {
         const jDir = getJoystickDirection();
         if (jDir.x !== 0 || jDir.y !== 0) {
