@@ -137,6 +137,9 @@ export function initGame(components, roomHandlers) {
         keys[e.code] = true;
         if (e.code === 'Space') { e.preventDefault(); shoot(); }
         if (e.code === 'KeyE') { e.preventDefault(); activateTankAbility(); }
+        // Отладка
+        if (e.code === 'ArrowUp') console.log('ArrowUp pressed');
+        if (e.code === 'KeyW') console.log('W pressed');
         if (e.key.startsWith('Arrow') || e.code.startsWith('Key')) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => {
@@ -309,6 +312,7 @@ function showGameOver(message) {
 }
 
 export function setCurrentRoom(roomCode, playerNick) {
+    console.log('[game] setCurrentRoom', roomCode, playerNick);
     currentRoomCode = roomCode;
     currentPlayerNick = playerNick;
 }
@@ -417,29 +421,29 @@ function gameLoop(timestamp) {
 }
 
 function updateGame(deltaTime) {
-    if (!currentRoomCode || !currentPlayerNick || !canvas) return;
+    if (!currentRoomCode || !currentPlayerNick || !canvas) {
+        console.log('[updateGame] missing room or player');
+        return;
+    }
     const move = PLAYER_SPEED * deltaTime;
-    let newX = myPos.x, newY = myPos.y;
-    let moved = false;
     let dx = 0, dy = 0;
 
-    if (keys['ArrowUp'] || keys['KeyW']) { dy -= 1; moved = true; }
-    if (keys['ArrowDown'] || keys['KeyS']) { dy += 1; moved = true; }
-    if (keys['ArrowLeft'] || keys['KeyA']) { dx -= 1; moved = true; }
-    if (keys['ArrowRight'] || keys['KeyD']) { dx += 1; moved = true; }
+    if (keys['ArrowUp'] || keys['KeyW']) dy -= 1;
+    if (keys['ArrowDown'] || keys['KeyS']) dy += 1;
+    if (keys['ArrowLeft'] || keys['KeyA']) dx -= 1;
+    if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
 
     if (isMobile && mobileControlsActive) {
         const jDir = getJoystickDirection();
         if (jDir.x !== 0 || jDir.y !== 0) {
             dx = jDir.x;
             dy = jDir.y;
-            moved = true;
         }
     }
 
-    if (!moved) return;
+    if (dx === 0 && dy === 0) return;
 
-    // Normalize diagonal movement
+    // Normalize diagonal
     if (dx !== 0 && dy !== 0) {
         const len = Math.hypot(dx, dy);
         dx /= len;
@@ -447,13 +451,16 @@ function updateGame(deltaTime) {
     }
     lastMoveDir = { x: dx, y: dy };
 
-    newX += dx * move;
-    newY += dy * move;
+    let newX = myPos.x + dx * move;
+    let newY = myPos.y + dy * move;
 
     if (!mySpiderActive) {
         newX = Math.max(TANK_HALF, Math.min(VIRTUAL_WIDTH - TANK_HALF, newX));
         newY = Math.max(TANK_HALF, Math.min(VIRTUAL_HEIGHT - TANK_HALF, newY));
-        if (!isPositionFree(newX, newY, TANK_HALF, obstacles)) return;
+        if (!isPositionFree(newX, newY, TANK_HALF, obstacles)) {
+            console.log('[updateGame] collision at', newX, newY);
+            return;
+        }
     } else {
         newX = Math.max(0, Math.min(VIRTUAL_WIDTH, newX));
         newY = Math.max(0, Math.min(VIRTUAL_HEIGHT, newY));
@@ -466,5 +473,240 @@ function updateGame(deltaTime) {
     }
 }
 
-// ... остальные функции (updateBullets, updatePhantom, updateBoomerangs, updateEnemyTurret, draw) остаются без изменений ...
-// (они уже были в вашем файле, я их не менял)
+// Остальные функции (updateBullets, updatePhantom, updateBoomerangs, updateEnemyTurret, draw) 
+// остаются без изменений (они были в вашем исходном файле)
+// Ниже я приведу их для полноты, но они уже были правильными.
+
+function updateBullets(deltaTime) {
+    if (winner) return;
+    for (let b of myBullets) { b.x += b.vx * deltaTime; b.y += b.vy * deltaTime; }
+    for (let b of enemyBullets) { b.x += b.vx * deltaTime; b.y += b.vy * deltaTime; }
+    if (myReflectActive) {
+        for (let i = enemyBullets.length - 1; i >= 0; i--) {
+            const b = enemyBullets[i];
+            const dx = b.x - myPos.x, dy = b.y - myPos.y;
+            if (dx*dx + dy*dy < (TANK_HALF + BULLET_RADIUS)**2) {
+                b.vx = -b.vx; b.vy = -b.vy;
+                b.owner = currentPlayerNick;
+                enemyBullets.splice(i,1);
+                myBullets.push(b);
+                if (currentRoomCode && b.key) {
+                    update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${b.key}`]: b });
+                }
+            }
+        }
+    }
+    for (let i = myBullets.length-1; i>=0; i--) {
+        const b = myBullets[i];
+        if (b.x<0 || b.x>VIRTUAL_WIDTH || b.y<0 || b.y>VIRTUAL_HEIGHT) {
+            if (currentRoomCode && b.key) remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
+            myBullets.splice(i,1); continue;
+        }
+        let hit = false;
+        for (let obs of obstacles) {
+            if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
+                if (currentRoomCode && b.key) remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
+                myBullets.splice(i,1); hit = true; break;
+            }
+        }
+        if (hit) continue;
+        const dx = b.x - enemyPos.x, dy = b.y - enemyPos.y;
+        if (dx*dx + dy*dy < (TANK_HALF + BULLET_RADIUS)**2) {
+            if (enemyReflectActive) {
+                b.vx = -b.vx; b.vy = -b.vy;
+                b.owner = enemyNick;
+                myBullets.splice(i,1);
+                enemyBullets.push(b);
+                if (currentRoomCode && b.key) {
+                    update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${b.key}`]: b });
+                }
+                continue;
+            }
+            if (currentRoomCode && b.key) remove(ref(db, `rooms/${currentRoomCode}/gameState/bullets/${b.key}`));
+            myBullets.splice(i,1);
+            update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: currentPlayerNick });
+            gameActive = false;
+            return;
+        }
+    }
+    for (let i = enemyBullets.length-1; i>=0; i--) {
+        const b = enemyBullets[i];
+        let hit = false;
+        for (let obs of obstacles) {
+            if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
+                enemyBullets.splice(i,1); hit = true; break;
+            }
+        }
+        if (hit) continue;
+        if (b.x<0 || b.x>VIRTUAL_WIDTH || b.y<0 || b.y>VIRTUAL_HEIGHT) {
+            enemyBullets.splice(i,1); continue;
+        }
+        const dx = b.x - myPos.x, dy = b.y - myPos.y;
+        if (dx*dx + dy*dy < (TANK_HALF + BULLET_RADIUS)**2) {
+            update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: enemyNick });
+            gameActive = false;
+            return;
+        }
+    }
+}
+
+function updatePhantom(deltaTime) {
+    if (!phantomActive || !phantomData) return;
+    phantomData.path.push({ ...myPos, dir: { ...lastMoveDir } });
+    if (phantomData.path.length > 100) phantomData.path.shift();
+    const now = Date.now() / 1000;
+    if (now - phantomData.lastShoot > 2 && phantomData.path.length > 0) {
+        const lastPos = phantomData.path[phantomData.path.length - 1];
+        const bulletKey = 'phantom_' + Date.now();
+        const bullet = {
+            x: lastPos.x, y: lastPos.y,
+            vx: lastPos.dir.x * BULLET_SPEED, vy: lastPos.dir.y * BULLET_SPEED,
+            owner: currentPlayerNick + '_phantom', key: bulletKey, type: 'phantom'
+        };
+        myBullets.push(bullet);
+        phantomData.lastShoot = now;
+        if (currentRoomCode) {
+            update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${bulletKey}`]: bullet });
+        }
+    }
+}
+
+function updateBoomerangs(deltaTime) {
+    for (let i = 0; i < boomerangBullets.length; i++) {
+        const b = boomerangBullets[i];
+        b.x += b.vx * deltaTime;
+        b.y += b.vy * deltaTime;
+
+        let hitObstacle = false;
+        for (let obs of obstacles) {
+            if (circleRectCollide(b.x, b.y, BULLET_RADIUS, obs)) {
+                hitObstacle = true;
+                break;
+            }
+        }
+        const outOfBounds = (b.x < 0 || b.x > VIRTUAL_WIDTH || b.y < 0 || b.y > VIRTUAL_HEIGHT);
+
+        if (!b.returning && (hitObstacle || outOfBounds)) {
+            b.returning = true;
+            const ownerPos = (b.owner === currentPlayerNick) ? myPos : enemyPos;
+            const dx = ownerPos.x - b.x, dy = ownerPos.y - b.y;
+            const len = Math.hypot(dx, dy);
+            if (len > 0.01) {
+                b.vx = (dx / len) * BULLET_SPEED;
+                b.vy = (dy / len) * BULLET_SPEED;
+            }
+            if (currentRoomCode && b.key) {
+                update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${b.key}`]: b });
+            }
+            continue;
+        }
+
+        let targetPos, targetReflectActive;
+        if (b.owner === currentPlayerNick) {
+            targetPos = enemyPos;
+            targetReflectActive = enemyReflectActive;
+        } else {
+            targetPos = myPos;
+            targetReflectActive = myReflectActive;
+        }
+        const dx = b.x - targetPos.x, dy = b.y - targetPos.y;
+        if (dx*dx + dy*dy < (TANK_HALF + BULLET_RADIUS)**2) {
+            if (targetReflectActive) {
+                b.vx = -b.vx;
+                b.vy = -b.vy;
+                b.owner = (b.owner === currentPlayerNick) ? enemyNick : currentPlayerNick;
+                if (currentRoomCode && b.key) {
+                    update(ref(db), { [`rooms/${currentRoomCode}/gameState/bullets/${b.key}`]: b });
+                }
+                continue;
+            }
+            update(ref(db), { [`rooms/${currentRoomCode}/gameState/winner`]: b.owner });
+            gameActive = false;
+            boomerangBullets.splice(i,1);
+            return;
+        }
+
+        if (b.x < -500 || b.x > VIRTUAL_WIDTH + 500 || b.y < -500 || b.y > VIRTUAL_HEIGHT + 500) {
+            boomerangBullets.splice(i,1);
+            i--;
+        }
+    }
+}
+
+function updateEnemyTurret() {
+    let dx = myPos.x - enemyPos.x, dy = myPos.y - enemyPos.y;
+    const len = Math.hypot(dx, dy);
+    if (len > 0.01) enemyTurretDir = { x: dx / len, y: dy / len };
+    else enemyTurretDir = { x: 0, y: 1 };
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const scaleX = getScaleX(), scaleY = getScaleY();
+    ctx.fillStyle = '#8B4513';
+    obstacles.forEach(obs => {
+        ctx.fillRect(toScreenX(obs.x), toScreenY(obs.y), obs.width * scaleX, obs.height * scaleY);
+    });
+    const bulletSize = BULLET_RADIUS * scaleX * 1.5;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    for (let b of myBullets) {
+        const sx = toScreenX(b.x), sy = toScreenY(b.y);
+        const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, bulletSize);
+        grad.addColorStop(0, '#ffaa00'); grad.addColorStop(1, '#ff5500');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(sx, sy, bulletSize, 0, 2*Math.PI); ctx.fill();
+    }
+    for (let b of enemyBullets) {
+        const sx = toScreenX(b.x), sy = toScreenY(b.y);
+        const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, bulletSize);
+        grad.addColorStop(0, '#ffaa00'); grad.addColorStop(1, '#ff5500');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(sx, sy, bulletSize, 0, 2*Math.PI); ctx.fill();
+    }
+    for (let b of boomerangBullets) {
+        ctx.fillStyle = '#FF00FF';
+        ctx.beginPath(); ctx.arc(toScreenX(b.x), toScreenY(b.y), bulletSize, 0, 2*Math.PI); ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    if (phantomActive && phantomData && phantomData.path.length > 0) {
+        const steps = Math.min(10, phantomData.path.length);
+        for (let i = 0; i < steps; i++) {
+            const p = phantomData.path[phantomData.path.length - 1 - i];
+            if (p) drawTank(p.x, p.y, myTank, p.dir, true);
+        }
+    }
+    if (enemyPhantomActive && enemyPhantomData && enemyPhantomData.path && enemyPhantomData.path.length > 0) {
+        const steps = Math.min(10, enemyPhantomData.path.length);
+        for (let i = 0; i < steps; i++) {
+            const p = enemyPhantomData.path[enemyPhantomData.path.length - 1 - i];
+            if (p) drawTank(p.x, p.y, enemyTank, p.dir, true);
+        }
+    }
+    drawTank(enemyPos.x, enemyPos.y, enemyTank, enemyTurretDir);
+    drawTank(myPos.x, myPos.y, myTank, lastMoveDir);
+    const now = Date.now() / 1000;
+    const cooldownLeft = Math.max(0, ABILITY_COOLDOWN - (now - lastAbilityTime));
+    const tankInfo = tanks[myTank];
+    if (tankInfo) {
+        ctx.font = '16px Arial';
+        ctx.fillStyle = 'white';
+        ctx.shadowBlur = 0;
+        ctx.fillText(`Танк: ${tankInfo.name}`, canvas.width - 200, 30);
+        ctx.fillText(`Способность: ${tankInfo.abilityName}`, canvas.width - 200, 55);
+        if (cooldownLeft > 0) {
+            ctx.fillStyle = 'orange';
+            ctx.fillText(`Кулдаун: ${cooldownLeft.toFixed(1)}с`, canvas.width - 200, 80);
+        } else {
+            ctx.fillStyle = 'lightgreen';
+            ctx.fillText('Готово (E)', canvas.width - 200, 80);
+        }
+        const indicatorX = canvas.width - 20, indicatorY = 20;
+        ctx.beginPath(); ctx.arc(indicatorX, indicatorY, 8, 0, 2*Math.PI);
+        ctx.fillStyle = cooldownLeft <= 0 ? '#00ff00' : '#ff5500';
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+}
