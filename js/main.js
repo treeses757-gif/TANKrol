@@ -9,14 +9,13 @@ const lobbyScreen = document.getElementById('lobby');
 const gameScreen = document.getElementById('game');
 const gameOverScreen = document.getElementById('game-over');
 const gameoverMessage = document.getElementById('gameover-message');
-const returnToRoomBtn = document.getElementById('return-to-room-btn');
 
 const loginForm = document.getElementById('login-form');
 const registerForm = document.getElementById('register-form');
 const showLoginBtn = document.getElementById('show-login');
 const showRegisterBtn = document.getElementById('show-register');
 const userNickSpan = document.getElementById('user-nick');
-const logoutBtn = document.getElementById('logoutBtn'); // кнопка выхода из аккаунта
+const logoutBtn = document.getElementById('logoutBtn');
 
 const createBtn = document.getElementById('createBtn');
 const joinBtn = document.getElementById('joinBtn');
@@ -34,14 +33,6 @@ if (currentPlayerNick) {
     userNickSpan.textContent = currentPlayerNick;
 }
 
-initGame({
-    gameScreen,
-    lobbyScreen,
-    gameOverScreen,
-    gameoverMessage,
-    returnToRoomBtn
-});
-
 const roomHandlers = initRoom({
     createBtn,
     joinBtn,
@@ -58,6 +49,13 @@ const roomHandlers = initRoom({
         setCurrentRoom(null, null);
     }
 });
+
+initGame({
+    gameScreen,
+    lobbyScreen,
+    gameOverScreen,
+    gameoverMessage
+}, roomHandlers); // передаём roomHandlers
 
 initAuth({
     authScreen,
