@@ -59,6 +59,7 @@ initGame({
 initAuth({
     authScreen,
     lobbyScreen,
+    gameScreen,
     loginForm,
     registerForm,
     showLoginBtn,
