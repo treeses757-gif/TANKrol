@@ -1,6 +1,6 @@
 import { db } from './firebase.js';
 import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-import { startGame, listenGameState, loadMap, setTanks } from './game.js';
+import { startGame, listenGameState, loadMap, setTanks, gameActive } from './game.js';
 import { getRandomMap } from './maps.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
 import { createSelectionScreen, showWaitingMessage, hideWaitingMessage } from './selection.js';
@@ -35,7 +35,7 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Обновление UI лобби: список игроков, их танки, готовность
+    // Обновление UI лобби и локальных переменных
     function updateRoomUI(players, tanksData, readyStatus) {
         if (!roomPlayersList) return;
         roomPlayersList.innerHTML = '';
@@ -57,9 +57,15 @@ export function initRoom(components) {
             `;
             roomPlayersList.appendChild(div);
         }
-        // Управление кнопками для текущего игрока
+        // Синхронизируем локальные переменные с Firebase
+        if (currentPlayerNick) {
+            if (tanksData[currentPlayerNick]) playerTank = tanksData[currentPlayerNick];
+            else playerTank = null;
+            playerReady = readyStatus[currentPlayerNick] || false;
+        }
+        // Управление кнопками
         if (tankSelectBtn) {
-            tankSelectBtn.disabled = playerReady; // нельзя менять танк, если уже готов
+            tankSelectBtn.disabled = playerReady;
         }
         if (readyBtn) {
             readyBtn.disabled = (!playerTank) || playerReady;
@@ -160,14 +166,27 @@ export function initRoom(components) {
             const players = Object.keys(data.players || {});
             const count = players.length;
             statusDiv.textContent = `Игроков: ${count}/2`;
-            // Обновляем UI списка игроков
+            // Обновляем UI и локальные переменные
             updateRoomUI(players, data.tanks || {}, data.ready || {});
-            // Если игра уже идёт, не мешаем
-            if (data.gameState) return;
-            // Если игрок в комнате и ещё не выбрал танк, показываем кнопку выбора
-            if (currentPlayerNick && !playerTank && !selectionShown && players.includes(currentPlayerNick)) {
-                // Можно показать автоматически? Нет, ждём нажатия кнопки
-                // Но можно предложить
+
+            // Если есть gameState и игра ещё не активна у этого клиента
+            if (data.gameState && !gameActive) {
+                const tanksData = data.tanks || {};
+                if (players.length === 2 && tanksData[players[0]] && tanksData[players[1]] && currentPlayerNick) {
+                    // Убедимся, что playerTank установлен
+                    if (!playerTank) {
+                        playerTank = tanksData[currentPlayerNick];
+                    }
+                    const enemyNick = players.find(n => n !== currentPlayerNick);
+                    const enemyTank = tanksData[enemyNick];
+                    setTanks(currentPlayerNick, playerTank, enemyNick, enemyTank);
+                    loadMap(currentRoomCode);
+                    startGame(currentRoomCode, currentPlayerNick, playerTank, enemyTank);
+                    listenGameState(currentRoomCode, currentPlayerNick);
+                    if (tankSelectBtn) tankSelectBtn.style.display = 'none';
+                    if (readyBtn) readyBtn.style.display = 'none';
+                }
+                return;
             }
         });
     }
