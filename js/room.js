@@ -3,7 +3,7 @@ import { ref, set, update, onValue, get, remove } from 'https://www.gstatic.com/
 import { startGame, listenGameState, loadMap, setTanks, gameActive } from './game.js';
 import { getRandomMap } from './maps.js';
 import { VIRTUAL_WIDTH, VIRTUAL_HEIGHT } from './config.js';
-import { createSelectionScreen, showWaitingMessage, hideWaitingMessage } from './selection.js';
+import { createSelectionScreen } from './selection.js';
 import { tanks } from './tanks.js';
 
 let currentPlayerNick = null;
@@ -12,6 +12,7 @@ let roomListener = null;
 let playerTank = null;
 let playerReady = false;
 let selectionShown = false;
+let gameStarted = false;
 
 // DOM элементы
 let tankSelectBtn, readyBtn, leaveRoomBtn, roomPlayersList;
@@ -35,7 +36,7 @@ export function initRoom(components) {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
-    // Обновление UI лобби и локальных переменных
+    // Обновление UI лобби
     function updateRoomUI(players, tanksData, readyStatus) {
         if (!roomPlayersList) return;
         roomPlayersList.innerHTML = '';
@@ -57,23 +58,17 @@ export function initRoom(components) {
             `;
             roomPlayersList.appendChild(div);
         }
-        // Синхронизируем локальные переменные с Firebase
         if (currentPlayerNick) {
-            if (tanksData[currentPlayerNick]) playerTank = tanksData[currentPlayerNick];
-            else playerTank = null;
+            playerTank = tanksData[currentPlayerNick] || null;
             playerReady = readyStatus[currentPlayerNick] || false;
         }
-        // Управление кнопками
-        if (tankSelectBtn) {
-            tankSelectBtn.disabled = playerReady;
-        }
+        if (tankSelectBtn) tankSelectBtn.disabled = playerReady;
         if (readyBtn) {
             readyBtn.disabled = (!playerTank) || playerReady;
             readyBtn.textContent = playerReady ? 'Готов' : 'Готов?';
         }
     }
 
-    // Выбор танка
     function showTankSelection() {
         if (playerReady) {
             alert('Вы уже готовы. Сначала снимите готовность, чтобы сменить танк.');
@@ -90,8 +85,7 @@ export function initRoom(components) {
                     [`rooms/${currentRoomCode}/ready/${currentPlayerNick}`]: false
                 });
             }
-            const roomRef = ref(db, `rooms/${currentRoomCode}`);
-            const snap = await get(roomRef);
+            const snap = await get(ref(db, `rooms/${currentRoomCode}`));
             const data = snap.val();
             if (data) {
                 updateRoomUI(Object.keys(data.players || {}), data.tanks || {}, data.ready || {});
@@ -99,7 +93,6 @@ export function initRoom(components) {
         });
     }
 
-    // Переключение готовности
     async function toggleReady() {
         if (!playerTank) {
             alert('Сначала выберите танк!');
@@ -110,50 +103,28 @@ export function initRoom(components) {
         await update(ref(db), {
             [`rooms/${currentRoomCode}/ready/${currentPlayerNick}`]: newReady
         });
-        // Проверка, можно ли начать игру
-        const roomRef = ref(db, `rooms/${currentRoomCode}`);
-        const snap = await get(roomRef);
-        const data = snap.val();
-        if (data) {
-            const players = Object.keys(data.players || {});
-            const readyStatus = data.ready || {};
-            const allReady = players.length === 2 && players.every(p => readyStatus[p] === true);
-            if (allReady && !data.gameState) {
-                await startGameAfterReady(data);
-            }
+    }
+
+    async function tryStartGame(roomData) {
+        if (gameStarted) return;
+        const players = Object.keys(roomData.players || {});
+        const tanksData = roomData.tanks || {};
+        const readyStatus = roomData.ready || {};
+        if (players.length === 2 && players.every(p => tanksData[p]) && players.every(p => readyStatus[p] === true) && !roomData.gameState) {
+            gameStarted = true;
+            const pos1 = { x: 100, y: 100 };
+            const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
+            const gameState = {
+                [players[0]]: pos1,
+                [players[1]]: pos2,
+                bullets: null,
+                winner: null
+            };
+            await set(ref(db, `rooms/${currentRoomCode}/gameState`), gameState);
+            await set(ref(db, `rooms/${currentRoomCode}/ready`), null);
         }
     }
 
-    async function startGameAfterReady(roomData) {
-        const players = Object.keys(roomData.players);
-        const tanksData = roomData.tanks;
-        if (players.length !== 2 || !tanksData[players[0]] || !tanksData[players[1]]) return;
-        // Создаём начальные позиции
-        const pos1 = { x: 100, y: 100 };
-        const pos2 = { x: VIRTUAL_WIDTH - 100, y: VIRTUAL_HEIGHT - 100 };
-        const gameState = {
-            [players[0]]: pos1,
-            [players[1]]: pos2,
-            bullets: null,
-            winner: null,
-            restart: null
-        };
-        await set(ref(db, `rooms/${currentRoomCode}/gameState`), gameState);
-        // Очищаем ready, чтобы при возврате не мешали
-        await set(ref(db, `rooms/${currentRoomCode}/ready`), null);
-        const enemyNick = players.find(n => n !== currentPlayerNick);
-        const enemyTank = tanksData[enemyNick];
-        setTanks(currentPlayerNick, playerTank, enemyNick, enemyTank);
-        loadMap(currentRoomCode);
-        startGame(currentRoomCode, currentPlayerNick, playerTank, enemyTank);
-        listenGameState(currentRoomCode, currentPlayerNick);
-        if (components.onRoomJoined) components.onRoomJoined(currentRoomCode);
-        // Скрываем кнопки лобби
-        if (tankSelectBtn) tankSelectBtn.style.display = 'none';
-        if (readyBtn) readyBtn.style.display = 'none';
-    }
-
-    // Слушатель изменений в комнате
     function listenRoom(code) {
         if (roomListener) roomListener();
         const roomRef = ref(db, `rooms/${code}`);
@@ -164,34 +135,40 @@ export function initRoom(components) {
                 return;
             }
             const players = Object.keys(data.players || {});
-            const count = players.length;
-            statusDiv.textContent = `Игроков: ${count}/2`;
-            // Обновляем UI и локальные переменные
+            statusDiv.textContent = `Игроков: ${players.length}/2`;
             updateRoomUI(players, data.tanks || {}, data.ready || {});
 
-            // Если есть gameState и игра ещё не активна у этого клиента
-            if (data.gameState && !gameActive) {
+            // Если gameState удалён, сбрасываем флаг и показываем кнопки
+            if (!data.gameState) {
+                if (gameStarted) gameStarted = false;
+                if (tankSelectBtn) tankSelectBtn.style.display = 'inline-block';
+                if (readyBtn) readyBtn.style.display = 'inline-block';
+            }
+
+            // Если есть gameState и игра ещё не активна, запускаем
+            if (data.gameState && !gameActive && !gameStarted) {
+                gameStarted = true;
                 const tanksData = data.tanks || {};
-                if (players.length === 2 && tanksData[players[0]] && tanksData[players[1]] && currentPlayerNick) {
-                    // Убедимся, что playerTank установлен
-                    if (!playerTank) {
-                        playerTank = tanksData[currentPlayerNick];
-                    }
-                    const enemyNick = players.find(n => n !== currentPlayerNick);
-                    const enemyTank = tanksData[enemyNick];
-                    setTanks(currentPlayerNick, playerTank, enemyNick, enemyTank);
+                const myTankId = tanksData[currentPlayerNick];
+                const enemyNick = players.find(n => n !== currentPlayerNick);
+                const enemyTankId = tanksData[enemyNick];
+                if (myTankId && enemyTankId) {
+                    setTanks(currentPlayerNick, myTankId, enemyNick, enemyTankId);
                     loadMap(currentRoomCode);
-                    startGame(currentRoomCode, currentPlayerNick, playerTank, enemyTank);
+                    startGame(currentRoomCode, currentPlayerNick, myTankId, enemyTankId);
                     listenGameState(currentRoomCode, currentPlayerNick);
                     if (tankSelectBtn) tankSelectBtn.style.display = 'none';
                     if (readyBtn) readyBtn.style.display = 'none';
                 }
                 return;
             }
+
+            if (!data.gameState) {
+                await tryStartGame(data);
+            }
         });
     }
 
-    // Выход из комнаты (без выхода из аккаунта)
     function leaveRoom() {
         if (currentPlayerNick && currentRoomCode) {
             remove(ref(db, `rooms/${currentRoomCode}/players/${currentPlayerNick}`));
@@ -201,6 +178,7 @@ export function initRoom(components) {
         playerTank = null;
         playerReady = false;
         selectionShown = false;
+        gameStarted = false;
         if (roomListener) roomListener();
         if (components.onRoomLeft) components.onRoomLeft();
         if (tankSelectBtn) tankSelectBtn.style.display = 'none';
@@ -211,7 +189,10 @@ export function initRoom(components) {
         copyBtn.style.display = 'none';
     }
 
-    // Создание комнаты
+    export function resetGameStarted() {
+        gameStarted = false;
+    }
+
     createBtn.onclick = async () => {
         if (!currentPlayerNick) { alert('Сначала войдите'); return; }
         const code = generateCode();
@@ -240,7 +221,6 @@ export function initRoom(components) {
         }
     };
 
-    // Присоединение к комнате
     joinBtn.onclick = async () => {
         if (!currentPlayerNick) { alert('Сначала войдите'); return; }
         const code = roomCodeInput.value.trim();
@@ -297,6 +277,7 @@ export function initRoom(components) {
     return {
         setPlayerNick,
         leaveRoom,
-        getRoomCode
+        getRoomCode,
+        resetGameStarted
     };
 }
