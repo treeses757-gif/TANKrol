@@ -376,3 +376,70 @@ body {
         flex-direction: column;
     }
 }
+/* Добавления для лобби */
+.players-list {
+    margin: 20px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+.player-card {
+    background: #f5f5f5;
+    border-radius: 15px;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.player-info {
+    flex: 1;
+    text-align: left;
+}
+.player-name {
+    font-weight: bold;
+    font-size: 18px;
+}
+.player-tank {
+    font-size: 14px;
+    color: #666;
+}
+.ready-indicator {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: bold;
+}
+.ready-true {
+    background: #4CAF50;
+    color: white;
+}
+.ready-false {
+    background: #f44336;
+    color: white;
+}
+.room-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 20px;
+}
+.ready-btn {
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.ready-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+#tankSelectBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
