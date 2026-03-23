@@ -1,8 +1,14 @@
 import { tanks, tankList } from './tanks.js';
 
 let onConfirmCallback = null;
+let selectionScreenElement = null;
 
 export function createSelectionScreen(onConfirm) {
+    // Удаляем предыдущий экран, если есть
+    if (selectionScreenElement) {
+        selectionScreenElement.remove();
+        selectionScreenElement = null;
+    }
     onConfirmCallback = onConfirm;
     
     const container = document.createElement('div');
@@ -81,6 +87,7 @@ export function createSelectionScreen(onConfirm) {
     confirmBtn.addEventListener('click', () => {
         if (selectedTank) {
             container.remove();
+            selectionScreenElement = null;
             if (onConfirmCallback) onConfirmCallback(selectedTank);
         } else {
             alert('Пожалуйста, выберите танк');
@@ -89,9 +96,14 @@ export function createSelectionScreen(onConfirm) {
     container.appendChild(confirmBtn);
     
     document.body.appendChild(container);
+    selectionScreenElement = container;
 }
 
 export function showWaitingMessage() {
+    // Удаляем старое сообщение, если есть
+    const oldMsg = document.getElementById('waiting-message');
+    if (oldMsg) oldMsg.remove();
+    
     const container = document.createElement('div');
     container.id = 'waiting-message';
     container.style.position = 'fixed';
