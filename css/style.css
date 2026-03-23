@@ -385,3 +385,74 @@ body {
         font-size: 11px;
     }
 }
+/* Мобильные контролы */
+#mobile-controls {
+    position: fixed;
+    bottom: 20px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 20px;
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 100;
+}
+
+#joystick {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    border: 2px solid white;
+    position: relative;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+#joystick-knob {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: white;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+#shoot-button, #ability-button {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 18px;
+    pointer-events: auto;
+    touch-action: manipulation;
+    user-select: none;
+}
+
+#shoot-button {
+    background: rgba(255,0,0,0.7);
+}
+
+#ability-button {
+    background: rgba(0,255,0,0.7);
+}
+
+@media (max-width: 768px) {
+    #joystick {
+        width: 100px;
+        height: 100px;
+    }
+    #shoot-button, #ability-button {
+        width: 70px;
+        height: 70px;
+        font-size: 16px;
+    }
+}
