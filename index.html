@@ -2,10 +2,9 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Дуэль кругов</title>
     <link rel="stylesheet" href="css/style.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 </head>
 <body>
     <!-- Экран аутентификации -->
@@ -16,14 +15,12 @@
                 <button id="show-login" class="toggle-btn active">Вход</button>
                 <button id="show-register" class="toggle-btn">Регистрация</button>
             </div>
-            
             <form id="login-form" class="auth-form active">
                 <input type="text" id="login-username" placeholder="Ваш ник" required>
                 <input type="password" id="login-password" placeholder="Пароль" required>
                 <button type="submit" class="auth-submit">Войти</button>
                 <div id="login-error" class="error-message"></div>
             </form>
-            
             <form id="register-form" class="auth-form">
                 <input type="text" id="register-username" placeholder="Придумайте ник" required>
                 <input type="password" id="register-password" placeholder="Пароль" required>
@@ -50,7 +47,13 @@
                 <button id="copyBtn" style="display:none;">📋 Копировать</button>
             </div>
             <div id="status">Ожидание...</div>
-            <button id="logoutBtn" class="logout-btn">Выйти</button>
+            <div id="room-players-list" class="players-list"></div>
+            <div class="room-buttons">
+                <button id="tankSelectBtn" class="primary-btn" style="display: none;">Выбрать танк</button>
+                <button id="readyBtn" class="ready-btn" style="display: none;">Готов?</button>
+            </div>
+            <button id="leaveRoomBtn" class="logout-btn">Покинуть комнату</button>
+            <button id="logoutBtn" class="logout-btn" style="margin-top:10px;">Выйти из аккаунта</button>
         </div>
     </div>
 
@@ -60,12 +63,11 @@
         <div id="roomInfo">Комната: <span id="roomCodeSpan"></span></div>
     </div>
 
-    <!-- Экран победы/поражения (ДОБАВЛЕН) -->
+    <!-- Экран окончания игры -->
     <div id="game-over" class="screen">
         <div class="gameover-container">
             <h2 id="gameover-message"></h2>
-            <button id="restart-btn" class="primary-btn">Заново</button>
-            <div id="restart-status">Ожидание соперника...</div>
+            <button id="return-to-room-btn" class="primary-btn">Вернуться в комнату</button>
         </div>
     </div>
 
