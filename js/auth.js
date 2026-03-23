@@ -69,7 +69,7 @@ export function initAuth(components) {
                 document.getElementById('register-confirm').value = '';
             } catch (err) {
                 console.error(err);
-                if (errorDiv) errorDiv.textContent = 'Ошибка регистрации';
+                if (errorDiv) errorDiv.textContent = 'Ошибка регистрации: ' + err.message;
             }
         });
     }
@@ -110,7 +110,7 @@ export function initAuth(components) {
                 if (onLoginSuccess) onLoginSuccess(nick);
             } catch (err) {
                 console.error(err);
-                if (errorDiv) errorDiv.textContent = 'Ошибка входа';
+                if (errorDiv) errorDiv.textContent = 'Ошибка входа: ' + err.message;
             }
         });
     }
